@@ -1,0 +1,318 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+  KAKAO
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum PlaceCategory {
+  CAFE
+  RESTAURANT
+  BAR
+  PARK
+  CULTURAL
+  BOOKSTORE
+  ETC
+}
+
+enum SubscriptionPlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum EventType {
+  SEARCH
+  CLICK_PLACE
+  NAVIGATION
+  CHECKIN
+  BOOKMARK
+  SUBSCRIPTION
+}
+
+enum NotificationType {
+  RECOMMEND
+  LIKE
+  NEARBY
+  PROMO
+  REPORT
+}
+
+// ─── User ────────────────────────────────────────────────────────────────────
+
+model User {
+  id                String     @id @default(uuid())
+  email             String?    @unique
+  name              String
+  nickname          String?    @unique
+  preferredVibes    String[]
+  isProfileComplete Boolean    @default(false)
+  provider          AuthProvider
+  providerId        String?
+  passwordHash      String?
+  status            UserStatus @default(ACTIVE)
+  deletedAt         DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  devices       Device[]
+  sessions      RefreshToken[]
+  bookmarks     Bookmark[]
+  checkIns      CheckIn[]
+  reviews       Review[]
+  notifications Notification[]
+  subscriptions Subscription[]
+  events        UserEvent[]
+  vibeReports   VibeReport[]
+
+  @@index([email])
+}
+
+model Device {
+  id        String   @id @default(uuid())
+  userId    String
+  fcmToken  String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+// ─── Place ───────────────────────────────────────────────────────────────────
+
+model Place {
+  id          String        @id @default(uuid())
+  name        String
+  category    PlaceCategory
+  description String?
+  address     String
+  lat         Float
+  lng         Float
+  phone       String?
+  hours       String?
+  rating      Float         @default(0)
+  reviewCount Int           @default(0)
+  vibeScore   Float         @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tags        PlaceTag[]
+  images      PlaceImage[]
+  checkIns    CheckIn[]
+  bookmarks   Bookmark[]
+  reviews     Review[]
+  ads         PartnerAd[]
+  moodResults MoodSearchPlace[]
+
+  @@index([lat, lng])
+  @@index([category])
+}
+
+model PlaceTag {
+  id      String @id @default(uuid())
+  placeId String
+  tag     String
+  place   Place  @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@index([placeId])
+}
+
+model PlaceImage {
+  id        String   @id @default(uuid())
+  placeId   String
+  url       String
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+}
+
+// ─── CheckIn & Review ────────────────────────────────────────────────────────
+
+model CheckIn {
+  id        String   @id @default(uuid())
+  userId    String
+  placeId   String
+  mood      String
+  note      String?
+  imageUrl  String?
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([placeId])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  placeId   String
+  rating    Int
+  body      String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  placeId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, placeId])
+}
+
+// ─── AI / Mood Engine ────────────────────────────────────────────────────────
+
+model MoodSearch {
+  id        String   @id @default(uuid())
+  userId    String?
+  query     String
+  mood      String
+  summary   String?
+  createdAt DateTime @default(now())
+
+  results MoodSearchPlace[]
+
+  @@index([userId])
+}
+
+model MoodSearchPlace {
+  id             String @id @default(uuid())
+  moodSearchId   String
+  placeId        String
+  relevanceScore Float
+
+  moodSearch MoodSearch @relation(fields: [moodSearchId], references: [id], onDelete: Cascade)
+  place      Place      @relation(fields: [placeId], references: [id], onDelete: Cascade)
+}
+
+model PromptTemplate {
+  id        String   @id @default(uuid())
+  type      String   @unique
+  template  String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Subscription & Monetization ─────────────────────────────────────────────
+
+model Subscription {
+  id          String               @id @default(uuid())
+  userId      String
+  platform    SubscriptionPlatform
+  receiptData String
+  productId   String
+  expiresAt   DateTime
+  createdAt   DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PartnerAd {
+  id        String   @id @default(uuid())
+  placeId   String
+  region    String
+  priority  Int      @default(0)
+  imageUrl  String?
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  place  Place     @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  clicks AdClick[]
+
+  @@index([region, isActive])
+}
+
+model AdClick {
+  id        String   @id @default(uuid())
+  adId      String
+  userId    String?
+  createdAt DateTime @default(now())
+
+  ad PartnerAd @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@index([adId])
+}
+
+// ─── Analytics & Events ──────────────────────────────────────────────────────
+
+model UserEvent {
+  id        String    @id @default(uuid())
+  userId    String?
+  type      EventType
+  payload   Json?
+  createdAt DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  isRead    Boolean          @default(false)
+  payload   Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+// ─── Vibe Report ─────────────────────────────────────────────────────────────
+
+model VibeReport {
+  id        String   @id @default(uuid())
+  userId    String
+  period    String
+  summary   Json
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+}
