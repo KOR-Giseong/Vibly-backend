@@ -60,8 +60,16 @@ export class GooglePlacesService {
         ...place,
         imageUrl: photoUrl ?? place.imageUrl,
         // Vibly rating은 건드리지 않음 → googleRating / googleReviewCount으로 분리
-        googleRating: result.rating ?? place.googleRating,
-        googleReviewCount: result.userRatingCount ?? place.googleReviewCount,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        googleRating:
+          typeof result.rating === 'number'
+            ? result.rating
+            : place.googleRating,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        googleReviewCount:
+          typeof result.userRatingCount === 'number'
+            ? result.userRatingCount
+            : place.googleReviewCount,
         hours: hours ?? place.hours,
         description: result.editorialSummary?.text ?? place.description,
       };
@@ -89,7 +97,9 @@ export class GooglePlacesService {
 
     if (!res.ok) {
       const errBody = await res.text();
-      this.logger.warn(`Google Text Search 오류: ${res.status} ${res.statusText} | ${errBody.slice(0, 300)}`);
+      this.logger.warn(
+        `Google Text Search 오류: ${res.status} ${res.statusText} | ${errBody.slice(0, 300)}`,
+      );
       return null;
     }
 
@@ -106,7 +116,10 @@ export class GooglePlacesService {
    * 단일 장소의 Google 데이터 (평점·리뷰수·사진) 조회.
    * place detail 화면에서 사용.
    */
-  async getGoogleData(name: string, address: string): Promise<{
+  async getGoogleData(
+    name: string,
+    address: string,
+  ): Promise<{
     googleRating?: number;
     googleReviewCount?: number;
     imageUrl?: string;
@@ -118,7 +131,9 @@ export class GooglePlacesService {
       return {
         googleRating: result.rating,
         googleReviewCount: result.userRatingCount,
-        imageUrl: result.photos?.[0] ? this.buildPhotoUrl(result.photos[0].name) : undefined,
+        imageUrl: result.photos?.[0]
+          ? this.buildPhotoUrl(result.photos[0].name)
+          : undefined,
       };
     } catch {
       return null;

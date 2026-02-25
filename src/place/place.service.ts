@@ -176,7 +176,7 @@ export class PlaceService {
 
   // ── 북마크 목록 ────────────────────────────────────────────────────────────
   async getBookmarks(userId: string) {
-    return this.prisma.bookmark.findMany({
+    const bookmarks = await this.prisma.bookmark.findMany({
       where: { userId },
       include: {
         place: {
@@ -188,6 +188,47 @@ export class PlaceService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return bookmarks.map((b) => {
+      const p = b.place;
+      const imageUrl =
+        p.images[0]?.url ??
+        CATEGORY_IMAGE[p.category] ??
+        CATEGORY_IMAGE['ETC'];
+      return {
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        categoryLabel: this.toCategoryLabel(p.category),
+        address: p.address,
+        lat: p.lat,
+        lng: p.lng,
+        rating: p.reviewCount > 0 ? p.rating : 0,
+        reviewCount: p.reviewCount,
+        imageUrl,
+        tags: p.tags.map((t) => t.tag),
+        isBookmarked: true,
+        savedAt: b.createdAt,
+      };
+    });
+  }
+
+  private toCategoryLabel(category: string): string {
+    const map: Record<string, string> = {
+      CAFE: '카페',
+      RESTAURANT: '레스토랑',
+      BAR: '바',
+      PARK: '공원',
+      CULTURAL: '문화공간',
+      BOOKSTORE: '서점',
+      BOWLING: '볼링장',
+      KARAOKE: '노래방',
+      SPA: '찜질방/스파',
+      ESCAPE: '방탈출',
+      ARCADE: '오락실',
+      ETC: '기타',
+    };
+    return map[category] ?? '기타';
   }
 
   // ── 리뷰 작성 / 수정 (1인 1리뷰 upsert) ──────────────────────────────────

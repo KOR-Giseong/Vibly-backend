@@ -28,6 +28,11 @@ enum PlaceCategory {
   PARK
   CULTURAL
   BOOKSTORE
+  BOWLING
+  KARAOKE
+  SPA
+  ESCAPE
+  ARCADE
   ETC
 }
 

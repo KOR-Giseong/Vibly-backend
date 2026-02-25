@@ -45,6 +45,10 @@ const CATEGORY_IMAGE: Record<string, string> = {
   KARAOKE:
     'https://images.unsplash.com/photo-1516280440614-37939bbacd81?w=400&q=80',
   SPA: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400&q=80',
+  ESCAPE:
+    'https://images.unsplash.com/photo-1559181567-c3190e52d8e4?w=400&q=80',
+  ARCADE:
+    'https://images.unsplash.com/photo-1511882150382-421056c89033?w=400&q=80',
   ETC: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=400&q=80',
 };
 
@@ -129,10 +133,9 @@ export class KakaoService {
     radiusM = 3000,
     page = 1,
   ): Promise<Place[]> {
-    // 카카오 카테고리 API는 코드 하나씩만 허용 → 병렬 호출
+    // ① 카카오 카테고리 코드가 있는 장소 → category.json API
     const categoryCodes = ['CE7', 'FD6', 'AT4', 'CT1', 'BK9', 'OL7'];
-
-    const results = await Promise.allSettled(
+    const categoryResults = await Promise.allSettled(
       categoryCodes.map((code) =>
         firstValueFrom(
           this.http.get<KakaoSearchResponse>(`${this.baseUrl}/category.json`, {
@@ -151,8 +154,32 @@ export class KakaoService {
       ),
     );
 
-    // 카테고리별 결과를 인터리빙 (한 카테고리에 치우치지 않도록)
-    const sets = results
+    // ② 카카오 카테고리 코드가 없는 장소 → keyword.json API (위치 기반)
+    const keywords = ['볼링장', '노래방', '찜질방', '방탈출', '오락실'];
+    const keywordResults = await Promise.allSettled(
+      keywords.map((query) =>
+        firstValueFrom(
+          this.http.get<KakaoSearchResponse>(`${this.baseUrl}/keyword.json`, {
+            headers: this.headers,
+            params: {
+              query,
+              x: lng,
+              y: lat,
+              radius: radiusM,
+              sort: 'distance',
+              size: 3,
+              page,
+            },
+          }),
+        ).then((res) => res.data.documents.map((doc) => this.toPlace(doc))),
+      ),
+    );
+
+    // ③ 두 결과 합쳐서 인터리빙 병합
+    const sets = [
+      ...categoryResults,
+      ...keywordResults,
+    ]
       .filter(
         (r): r is PromiseFulfilledResult<Place[]> => r.status === 'fulfilled',
       )
@@ -162,9 +189,9 @@ export class KakaoService {
     const merged: Place[] = [];
     const maxLen = Math.max(...sets.map((s) => s.length), 0);
 
-    for (let i = 0; i < maxLen && merged.length < 15; i++) {
+    for (let i = 0; i < maxLen && merged.length < 20; i++) {
       for (const set of sets) {
-        if (merged.length >= 15) break;
+        if (merged.length >= 20) break;
         const place = set[i];
         if (place && !seen.has(place.id)) {
           seen.add(place.id);
