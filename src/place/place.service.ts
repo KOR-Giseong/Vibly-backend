@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { KakaoService } from './kakao.service';
 import { GooglePlacesService } from './google-places.service';
@@ -30,18 +31,21 @@ export class PlaceService {
     private prisma: PrismaService,
     private kakao: KakaoService,
     private googlePlaces: GooglePlacesService,
+    private config: ConfigService,
   ) {}
 
-  // ── 주변 장소 (카카오 우선) ─────────────────────────────────────────────────
-  async getNearby(lat: number, lng: number, radiusKm = 3, page = 1) {
-    const kakaoResults = await this.kakao.searchNearby(lat, lng, radiusKm * 1000, page);
+  // ── 주변 장소 (카카오에서 바로 호출, DB 저장 없이 반환) ──────────────────
+  async getNearby(lat: number, lng: number, radiusM = 3000, page = 1) {
+    const kakaoResults = await this.kakao.searchNearby(lat, lng, radiusM, page);
 
     if (kakaoResults.length > 0) {
-      return await this.paginateKakao(kakaoResults, page);
+      // DB 저장 없이 Kakao 결과 + 기존 Vibly 평점만 병합
+      const merged = await this.mergeDbRatings(kakaoResults);
+      return { data: merged, page, total: merged.length, hasNext: merged.length === 20 };
     }
 
     this.logger.warn('카카오 결과 없음 → DB 폴백');
-    const delta = radiusKm / 111;
+    const delta = radiusM / 111000; // 미터 → 위도/경도 근사 변환
     const places = await this.prisma.place.findMany({
       where: {
         isActive: true,
@@ -56,12 +60,14 @@ export class PlaceService {
     return { data: places, page, hasNext: places.length === 15 };
   }
 
-  // ── 키워드 검색 (카카오 우선) ───────────────────────────────────────────────
+  // ── 키워드 검색 (카카오에서 바로 호출, DB 저장 없이 반환) ──────────────────
   async search(query: string, lat?: number, lng?: number, page = 1) {
     const kakaoResults = await this.kakao.searchByKeyword(query, lat, lng, page);
 
     if (kakaoResults.length > 0) {
-      return await this.paginateKakao(kakaoResults, page);
+      // DB 저장 없이 Kakao 결과 + 기존 Vibly 평점만 병합
+      const merged = await this.mergeDbRatings(kakaoResults);
+      return { data: merged, page, total: merged.length, hasNext: merged.length === 15 };
     }
 
     this.logger.warn('카카오 검색 결과 없음 → DB 폴백');
@@ -82,12 +88,12 @@ export class PlaceService {
   }
 
   // ── 장소 상세 ──────────────────────────────────────────────────────────────
-  async getById(id: string, userId?: string) {
+  async getById(id: string, userId?: string, hint?: { name: string; lat: number; lng: number }) {
     if (id.startsWith('kakao_')) {
-      await this.upsertKakaoPlace(id);
+      await this.upsertKakaoPlace(id, undefined, hint);
     }
 
-    const [place, myCheckInCount, myReview] = await Promise.all([
+    const [place, myCheckInCount, myReview, myBookmark] = await Promise.all([
       this.prisma.place.findUnique({
         where: { id },
         include: {
@@ -108,6 +114,9 @@ export class PlaceService {
             where: { userId_placeId: { userId, placeId: id } },
             include: { user: { select: { id: true, name: true } } },
           })
+        : Promise.resolve(null),
+      userId
+        ? this.prisma.bookmark.findUnique({ where: { userId_placeId: { userId, placeId: id } } })
         : Promise.resolve(null),
     ]);
     if (!place) throw new NotFoundException('장소를 찾을 수 없어요.');
@@ -135,6 +144,7 @@ export class PlaceService {
 
     return {
       ...place,
+      vibeScore: score, // 항상 계산된 점수 반환 (DB의 0 덮어씀)
       tags: vibeTags,
       description: autoDescription,
       imageUrl: googleData?.imageUrl ?? dbImageUrl,
@@ -150,15 +160,29 @@ export class PlaceService {
         value: Math.min(99, Math.round(score * [1, 0.88, 0.78][i])),
       })),
       aiReasons: this.generateAiReasons(vibeTags, place.category, place.rating),
+      isBookmarked: !!myBookmark,
       myCheckInCount,
       myReview: myReview ?? null,
     };
   }
 
   // ── 북마크 토글 ────────────────────────────────────────────────────────────
-  async toggleBookmark(userId: string, placeId: string) {
+  async toggleBookmark(userId: string, placeId: string, imageUrl?: string) {
     if (placeId.startsWith('kakao_')) {
       await this.upsertKakaoPlace(placeId);
+    }
+
+    // imageUrl이 전달되면 Google 실제 이미지로 교체 (카테고리 기본 이미지보다 우선)
+    if (imageUrl) {
+      await this.prisma.place.update({
+        where: { id: placeId },
+        data: {
+          images: {
+            deleteMany: {},
+            create: [{ url: imageUrl, isPrimary: true }],
+          },
+        },
+      }).catch(() => {});
     }
 
     const existing = await this.prisma.bookmark.findUnique({
@@ -168,10 +192,23 @@ export class PlaceService {
       await this.prisma.bookmark.delete({
         where: { userId_placeId: { userId, placeId } },
       });
-      return { bookmarked: false };
+      return { isBookmarked: false };
     }
     await this.prisma.bookmark.create({ data: { userId, placeId } });
-    return { bookmarked: true };
+    return { isBookmarked: true };
+  }
+
+  // ── Google Places 사진 URL을 현재 API 키로 재생성 ─────────────────────────
+  private refreshGooglePhotoUrl(url: string): string {
+    try {
+      const apiKey = this.config.get<string>('GOOGLE_PLACES_API_KEY');
+      if (!apiKey || !url.includes('places.googleapis.com')) return url;
+      const urlObj = new URL(url);
+      urlObj.searchParams.set('key', apiKey);
+      return urlObj.toString();
+    } catch {
+      return url;
+    }
   }
 
   // ── 북마크 목록 ────────────────────────────────────────────────────────────
@@ -181,7 +218,7 @@ export class PlaceService {
       include: {
         place: {
           include: {
-            images: { where: { isPrimary: true }, take: 1 },
+            images: { take: 1 },
             tags: true,
           },
         },
@@ -189,12 +226,40 @@ export class PlaceService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return bookmarks.map((b) => {
-      const p = b.place;
-      const imageUrl =
-        p.images[0]?.url ??
-        CATEGORY_IMAGE[p.category] ??
-        CATEGORY_IMAGE['ETC'];
+    // 이미지가 없는 장소는 Google Places에서 실시간 보완
+    const enriched = await Promise.all(
+      bookmarks.map(async (b) => {
+        const p = b.place;
+        let rawImageUrl = p.images[0]?.url;
+        this.logger.log(`[bookmark] ${p.name} | dbImages: ${p.images.length} | raw: ${rawImageUrl?.slice(0,50)}`);
+
+        if (!rawImageUrl) {
+          try {
+            const googleData = await this.googlePlaces.getGoogleData(p.name, p.address);
+            if (googleData?.imageUrl) {
+              rawImageUrl = googleData.imageUrl;
+              // DB에도 저장해서 다음에는 바로 사용
+              await this.prisma.place.update({
+                where: { id: p.id },
+                data: {
+                  images: { create: [{ url: rawImageUrl, isPrimary: true }] },
+                },
+              }).catch(() => {/* 저장 실패해도 무시 */});
+            }
+          } catch {
+            // Google 실패 시 fallback 사용
+          }
+        }
+
+        const imageUrl = this.refreshGooglePhotoUrl(
+          rawImageUrl ?? CATEGORY_IMAGE[p.category] ?? CATEGORY_IMAGE['ETC'],
+        );
+        this.logger.log(`[bookmark] ${p.name} | image: ${imageUrl?.slice(0, 60)}`);
+        return { imageUrl, b, p };
+      }),
+    );
+
+    return enriched.map(({ imageUrl, b, p }) => {
       return {
         id: p.id,
         name: p.name,
@@ -310,9 +375,13 @@ export class PlaceService {
       : PrismaPlaceCategory.ETC;
   }
 
-  private async upsertKakaoPlace(kakaoId: string, place?: Place): Promise<void> {
+  private async upsertKakaoPlace(
+    kakaoId: string,
+    place?: Place,
+    hint?: { name: string; lat: number; lng: number },
+  ): Promise<void> {
     try {
-      const data = place ?? (await this.fetchKakaoPlaceById(kakaoId));
+      const data = place ?? (await this.fetchKakaoPlaceById(kakaoId, hint));
       if (!data) {
         this.logger.warn(`카카오 장소 조회 실패: ${kakaoId}`);
         return;
@@ -353,6 +422,14 @@ export class PlaceService {
             rating: data.rating,
             vibeScore: Math.round((data.rating / 5) * 85 + 10),
           }),
+          // Unsplash 카테고리 이미지(기본 이미지)는 DB 기존 이미지를 덮어쓰지 않음
+          // Google Places 이미지(실제 이미지)가 있을 때만 업데이트
+          ...(data.imageUrl && !data.imageUrl.includes('unsplash.com') && {
+            images: {
+              deleteMany: {},
+              create: [{ url: data.imageUrl, isPrimary: true }],
+            },
+          }),
         },
       });
     } catch (err) {
@@ -360,29 +437,42 @@ export class PlaceService {
     }
   }
 
-  // ── Private: kakao_xxx ID로 DB에서 Place 정보 복원 ─────────────────────────
-  private async fetchKakaoPlaceById(kakaoPlaceId: string): Promise<Place | null> {
+  // ── Private: kakao_xxx ID로 Place 정보 복원 (DB → Kakao 검색 순으로 폴백) ──
+  private async fetchKakaoPlaceById(
+    kakaoPlaceId: string,
+    hint?: { name: string; lat: number; lng: number },
+  ): Promise<Place | null> {
+    // 1) DB 먼저 확인
     const existing = await this.prisma.place.findUnique({
       where: { id: kakaoPlaceId },
       include: { tags: true },
     });
-    if (!existing) return null;
+    if (existing) {
+      return {
+        id: existing.id,
+        name: existing.name,
+        category: existing.category as string,
+        categoryLabel: existing.category,
+        address: existing.address,
+        lat: existing.lat,
+        lng: existing.lng,
+        phone: existing.phone ?? undefined,
+        hours: existing.hours ?? undefined,
+        description: existing.description ?? undefined,
+        rating: existing.rating,
+        reviewCount: existing.reviewCount,
+        tags: existing.tags.map((t) => t.tag),
+      };
+    }
 
-    return {
-      id: existing.id,
-      name: existing.name,
-      category: existing.category as string,
-      categoryLabel: existing.category,
-      address: existing.address,
-      lat: existing.lat,
-      lng: existing.lng,
-      phone: existing.phone ?? undefined,
-      hours: existing.hours ?? undefined,
-      description: existing.description ?? undefined,
-      rating: existing.rating,
-      reviewCount: existing.reviewCount,
-      tags: existing.tags.map((t) => t.tag),
-    };
+    // 2) DB에 없고 hint(name + coords)가 있으면 Kakao 키워드 검색으로 폴백
+    if (hint) {
+      const results = await this.kakao.searchByKeyword(hint.name, hint.lat, hint.lng, 1, 'distance');
+      const matched = results.find((p) => p.id === kakaoPlaceId);
+      if (matched) return matched;
+    }
+
+    return null;
   }
 
   // ── Public: DB 평점(앱 리뷰 반영)을 카카오 결과에 병합 ────────────────────
@@ -392,37 +482,59 @@ export class PlaceService {
     const ids = places.map((p) => p.id);
     const dbPlaces = await this.prisma.place.findMany({
       where: { id: { in: ids } },
-      select: { id: true, rating: true, reviewCount: true, vibeScore: true },
+      select: {
+        id: true,
+        rating: true,
+        reviewCount: true,
+        vibeScore: true,
+        images: { take: 1, orderBy: { createdAt: 'desc' } },
+      },
     });
     const dbMap = new Map(dbPlaces.map((p) => [p.id, p]));
 
     return places.map((place) => {
       const db = dbMap.get(place.id);
+      // DB에 저장된 실제 이미지가 있으면 Kakao 카테고리 이미지 대신 사용
+      const imageUrl = db?.images?.[0]?.url ?? place.imageUrl;
+
       // 실제 앱 리뷰(reviewCount > 0)가 있을 때만 DB 평점 적용
       // reviewCount=0이면 이전 Google 데이터가 오염된 것 → 무시
       if (db && db.reviewCount > 0 && db.rating > 0) {
         return {
           ...place,
+          imageUrl,
           rating: db.rating,
           reviewCount: db.reviewCount,
-          ...(db.vibeScore != null && { vibeScore: db.vibeScore }),
+          vibeScore: (db.vibeScore != null && db.vibeScore > 0)
+            ? db.vibeScore
+            : this.categoryVibeScore(place.category),
         };
       }
-      return { ...place, rating: 0, reviewCount: db?.reviewCount ?? 0 };
+      // DB 리뷰 없음 → 카테고리 기반 기본 바이브 점수 부여
+      const vibeScore = (db?.vibeScore != null && db.vibeScore > 0)
+        ? db.vibeScore
+        : this.categoryVibeScore(place.category);
+      return { ...place, imageUrl, rating: 0, reviewCount: db?.reviewCount ?? 0, vibeScore };
     });
   }
 
-  // ── Private: 카카오 결과를 페이지네이션 형식으로 래핑 (DB 저장 + 평점 병합) ─
-  private async paginateKakao(places: Place[], page: number) {
-    // 상세 조회 시 404 방지 — DB에 먼저 저장
-    await this.upsertKakaoPlaces(places);
-    const merged = await this.mergeDbRatings(places);
-    return {
-      data: merged,
-      page,
-      total: merged.length,
-      hasNext: merged.length === 15,
+  // ── Private: 카테고리별 기본 바이브 점수 ──────────────────────────────────
+  private categoryVibeScore(category: string): number {
+    const scores: Record<string, number> = {
+      CAFE: 82,
+      RESTAURANT: 80,
+      BAR: 78,
+      PARK: 85,
+      CULTURAL: 88,
+      BOOKSTORE: 83,
+      BOWLING: 79,
+      KARAOKE: 80,
+      SPA: 85,
+      ESCAPE: 82,
+      ARCADE: 78,
+      ETC: 75,
     };
+    return scores[category] ?? 75;
   }
 
   // ── Private: 카테고리 기반 바이브 태그 생성 (2~5개) ──────────────────────

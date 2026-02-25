@@ -19,7 +19,7 @@ export class PlaceController {
     @Query('page') page?: string,
   ) {
     console.log(`[nearby] lat=${lat} lng=${lng} radius=${radius}`);
-    return this.placeService.getNearby(+lat, +lng, +(radius ?? 3), +(page ?? 1));
+    return this.placeService.getNearby(+lat, +lng, +(radius ?? 3000), +(page ?? 1));
   }
 
   @Get('search')
@@ -43,15 +43,24 @@ export class PlaceController {
 
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
-  getById(@Req() req: any, @Param('id') id: string) {
-    return this.placeService.getById(id, req.user?.id);
+  getById(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('name') name?: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ) {
+    const hint = name && lat && lng
+      ? { name, lat: +lat, lng: +lng }
+      : undefined;
+    return this.placeService.getById(id, req.user?.id, hint);
   }
 
   @Post(':id/bookmark')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  bookmark(@Req() req: any, @Param('id') id: string) {
-    return this.placeService.toggleBookmark(req.user.id, id);
+  bookmark(@Req() req: any, @Param('id') id: string, @Body() body: { imageUrl?: string }) {
+    return this.placeService.toggleBookmark(req.user.id, id, body?.imageUrl);
   }
 
   @Post(':id/checkin')

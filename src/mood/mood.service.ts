@@ -39,20 +39,20 @@ export class MoodService {
     // 3. Google Places로 사진 + 평점 보완 (API 키 없으면 자동 생략)
     const enrichedResults = await this.googlePlaces.enrichPlaces(kakaoResults);
 
-    // 4. 검색된 카카오 장소를 DB에 저장 (상세 조회 시 404 방지를 위해 await)
-    await this.placeService.upsertKakaoPlaces(enrichedResults);
-
-    // 4b. DB 앱 리뷰 평점 병합 (리뷰가 있는 장소는 앱 평점 우선 표시)
+    // 4. DB 앱 리뷰 평점만 병합 (저장은 상세보기/북마크/체크인 시에만)
     const mergedResults = await this.placeService.mergeDbRatings(enrichedResults);
 
-    // 5. 검색 로그 비동기 저장 (결과를 기다리지 않음)
-    this.saveMoodSearchLog(query, analysis.summary, userId, mergedResults).catch(
+    // 5. 기분 관련성 점수로 정렬 — 키워드 매칭도가 높은 장소를 상위에
+    const rankedResults = this.rankByMoodRelevance(mergedResults, analysis.keywords);
+
+    // 6. 검색 로그 비동기 저장 (결과를 기다리지 않음)
+    this.saveMoodSearchLog(query, analysis.summary, userId).catch(
       (err) => this.logger.error('검색 로그 저장 실패', err),
     );
 
     return {
       summary:  analysis.summary,
-      places:   mergedResults,
+      places:   rankedResults,
       keywords: analysis.keywords,
       query,
       fallback: false,
@@ -122,8 +122,10 @@ export class MoodService {
   // ── 카카오 병렬 검색 ─────────────────────────────────────────────────────────
   private async searchKakaoPlaces(keywords: string[], lat: number, lng: number) {
     // 키워드별 카카오 검색 병렬 실행
+    // accuracy 정렬: 거리 무관하게 키워드 관련성 높은 장소 우선
+    // lat/lng는 거리 표시용으로만 전달
     const resultSets = await Promise.all(
-      keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng)),
+      keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'accuracy')),
     );
 
     // 키워드별로 균등하게 인터리빙 (카페만 나오지 않도록)
@@ -145,6 +147,43 @@ export class MoodService {
     }
 
     return merged;
+  }
+
+  // ── 기분 관련성 점수로 정렬 ──────────────────────────────────────────────────
+  private rankByMoodRelevance(places: any[], keywords: string[]): any[] {
+    // 카테고리별 기본 점수 (기분 검색에 얼마나 어울리는지)
+    const BASE: Record<string, number> = {
+      CULTURAL: 78, PARK: 76, SPA: 76, BOOKSTORE: 75, CAFE: 74,
+      ESCAPE: 74, RESTAURANT: 72, KARAOKE: 72, BAR: 70,
+      BOWLING: 71, ARCADE: 71, ETC: 66,
+    };
+
+    const scored = places.map((place) => {
+      let score = BASE[place.category] ?? 66;
+      const name: string = place.name ?? '';
+      const label: string = place.categoryLabel ?? '';
+      let matchedKeyword: string | null = null;
+
+      // 키워드 매칭 가중치: 첫 번째 키워드(AI 핵심 추천)가 가장 높은 가중치
+      keywords.forEach((kw, idx) => {
+        const weight = [18, 12, 7][idx] ?? 5;
+        if (name.includes(kw) || label.includes(kw) || kw.includes(label)) {
+          score += weight;
+          if (!matchedKeyword) matchedKeyword = kw;
+        }
+      });
+
+      // 태그: 매칭된 AI 키워드를 맨 앞에 배치해 관련성 표시
+      const existingTags: string[] = Array.isArray(place.tags) ? place.tags : [];
+      const tags = matchedKeyword
+        ? [matchedKeyword, ...existingTags.filter((t: string) => t !== matchedKeyword).slice(0, 2)]
+        : existingTags;
+
+      return { ...place, vibeScore: Math.min(99, score), tags };
+    });
+
+    // vibeScore 내림차순 정렬
+    return scored.sort((a, b) => (b.vibeScore ?? 0) - (a.vibeScore ?? 0));
   }
 
   // ── 빠른 키워드 매칭 (Gemini 없이 즉시 결과 반환, 매칭 실패 시 null) ────────
@@ -201,7 +240,6 @@ export class MoodService {
     query: string,
     summary: string,
     userId?: string,
-    places?: any[],
   ) {
     await this.prisma.moodSearch.create({
       data: {

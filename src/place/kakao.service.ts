@@ -99,13 +99,14 @@ export class KakaoService {
     lat?: number,
     lng?: number,
     page = 1,
+    sort: 'accuracy' | 'distance' = 'distance',
   ): Promise<Place[]> {
     try {
       const params: Record<string, unknown> = { query, page, size: 15 };
       if (lat != null && lng != null) {
         params.x = lng;
         params.y = lat;
-        params.sort = 'distance';
+        params.sort = sort;
       }
 
       const { data } = await firstValueFrom(
