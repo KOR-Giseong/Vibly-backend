@@ -18,17 +18,20 @@ export class PlaceController {
     @Query('radius') radius?: string,
     @Query('page') page?: string,
   ) {
+    console.log(`[nearby] lat=${lat} lng=${lng} radius=${radius}`);
     return this.placeService.getNearby(+lat, +lng, +(radius ?? 3), +(page ?? 1));
   }
 
   @Get('search')
   search(
-    @Query('q') q: string,
+    @Query('query') query: string,   // 앱이 'query' 파라미터로 전송
+    @Query('q') q: string,           // 웹/직접 호출용 호환
     @Query('lat') lat?: string,
     @Query('lng') lng?: string,
     @Query('page') page?: string,
   ) {
-    return this.placeService.search(q, lat ? +lat : undefined, lng ? +lng : undefined, +(page ?? 1));
+    const keyword = query || q;
+    return this.placeService.search(keyword, lat ? +lat : undefined, lng ? +lng : undefined, +(page ?? 1));
   }
 
   @Get('bookmarks')
