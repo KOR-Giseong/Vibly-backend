@@ -17,6 +17,9 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const place_service_1 = require("./place.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
+const optional_jwt_auth_guard_1 = require("../auth/guards/optional-jwt-auth.guard");
+const checkin_dto_1 = require("./dto/checkin.dto");
+const add_review_dto_1 = require("./dto/add-review.dto");
 let PlaceController = class PlaceController {
     placeService;
     constructor(placeService) {
@@ -31,14 +34,20 @@ let PlaceController = class PlaceController {
     getBookmarks(req) {
         return this.placeService.getBookmarks(req.user.id);
     }
-    getById(id) {
-        return this.placeService.getById(id);
+    getById(req, id) {
+        return this.placeService.getById(id, req.user?.id);
     }
     bookmark(req, id) {
         return this.placeService.toggleBookmark(req.user.id, id);
     }
     checkIn(req, id, body) {
         return this.placeService.checkIn(req.user.id, id, body.mood, body.note, body.imageUrl);
+    }
+    getReviews(id, page, limit) {
+        return this.placeService.getReviews(id, +(page ?? 1), +(limit ?? 20));
+    }
+    addReview(req, id, body) {
+        return this.placeService.addReview(req.user.id, id, body.rating, body.body);
     }
 };
 exports.PlaceController = PlaceController;
@@ -73,9 +82,11 @@ __decorate([
 ], PlaceController.prototype, "getBookmarks", null);
 __decorate([
     (0, common_1.Get)(':id'),
-    __param(0, (0, common_1.Param)('id')),
+    (0, common_1.UseGuards)(optional_jwt_auth_guard_1.OptionalJwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], PlaceController.prototype, "getById", null);
 __decorate([
@@ -96,9 +107,29 @@ __decorate([
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:paramtypes", [Object, String, checkin_dto_1.CheckInDto]),
     __metadata("design:returntype", void 0)
 ], PlaceController.prototype, "checkIn", null);
+__decorate([
+    (0, common_1.Get)(':id/reviews'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Query)('page')),
+    __param(2, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], PlaceController.prototype, "getReviews", null);
+__decorate([
+    (0, common_1.Post)(':id/reviews'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, add_review_dto_1.AddReviewDto]),
+    __metadata("design:returntype", void 0)
+], PlaceController.prototype, "addReview", null);
 exports.PlaceController = PlaceController = __decorate([
     (0, swagger_1.ApiTags)('Place'),
     (0, common_1.Controller)('places'),

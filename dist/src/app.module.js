@@ -10,6 +10,7 @@ exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const throttler_1 = require("@nestjs/throttler");
+const core_1 = require("@nestjs/core");
 const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
 const place_module_1 = require("./place/place.module");
@@ -22,12 +23,18 @@ exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
             config_1.ConfigModule.forRoot({ isGlobal: true }),
-            throttler_1.ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
+            throttler_1.ThrottlerModule.forRoot([
+                { name: 'default', ttl: 60_000, limit: 60 },
+                { name: 'auth', ttl: 900_000, limit: 10 },
+            ]),
             prisma_module_1.PrismaModule,
             auth_module_1.AuthModule,
             place_module_1.PlaceModule,
             mood_module_1.MoodModule,
             analytics_module_1.AnalyticsModule,
+        ],
+        providers: [
+            { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard },
         ],
     })
 ], AppModule);

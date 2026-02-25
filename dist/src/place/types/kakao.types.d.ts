@@ -7,6 +7,8 @@ export interface Place {
     lat: number;
     lng: number;
     phone?: string;
+    hours?: string;
+    description?: string;
     placeUrl?: string;
     rating: number;
     reviewCount: number;
@@ -16,4 +18,6 @@ export interface Place {
     vibeScore?: number;
     isSponsored?: boolean;
     isBookmarked?: boolean;
+    googleRating?: number;
+    googleReviewCount?: number;
 }

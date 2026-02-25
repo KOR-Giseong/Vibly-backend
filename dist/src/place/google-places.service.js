@@ -40,11 +40,15 @@ let GooglePlacesService = GooglePlacesService_1 = class GooglePlacesService {
             const photoUrl = result.photos?.[0]
                 ? this.buildPhotoUrl(result.photos[0].name)
                 : undefined;
+            const weekday = result.regularOpeningHours?.weekdayDescriptions?.[0];
+            const hours = weekday?.replace(/^[가-힣]+요일:\s*/, '');
             return {
                 ...place,
                 imageUrl: photoUrl ?? place.imageUrl,
-                rating: result.rating ?? place.rating,
-                reviewCount: result.userRatingCount ?? place.reviewCount,
+                googleRating: result.rating ?? place.googleRating,
+                googleReviewCount: result.userRatingCount ?? place.googleReviewCount,
+                hours: hours ?? place.hours,
+                description: result.editorialSummary?.text ?? place.description,
             };
         }
         catch (err) {
@@ -58,7 +62,7 @@ let GooglePlacesService = GooglePlacesService_1 = class GooglePlacesService {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Goog-Api-Key': this.apiKey,
-                'X-Goog-FieldMask': 'places.id,places.rating,places.userRatingCount,places.photos',
+                'X-Goog-FieldMask': 'places.id,places.rating,places.userRatingCount,places.photos,places.regularOpeningHours,places.editorialSummary',
             },
             body: JSON.stringify({
                 textQuery: query,
@@ -76,6 +80,23 @@ let GooglePlacesService = GooglePlacesService_1 = class GooglePlacesService {
     }
     buildPhotoUrl(photoName) {
         return `${this.baseUrl}/${photoName}/media?maxWidthPx=400&key=${this.apiKey}`;
+    }
+    async getGoogleData(name, address) {
+        if (!this.apiKey)
+            return null;
+        try {
+            const result = await this.textSearch(`${name} ${address}`);
+            if (!result)
+                return null;
+            return {
+                googleRating: result.rating,
+                googleReviewCount: result.userRatingCount,
+                imageUrl: result.photos?.[0] ? this.buildPhotoUrl(result.photos[0].name) : undefined,
+            };
+        }
+        catch {
+            return null;
+        }
     }
 };
 exports.GooglePlacesService = GooglePlacesService;

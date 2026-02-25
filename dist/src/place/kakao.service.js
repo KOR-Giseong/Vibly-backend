@@ -87,30 +87,37 @@ let KakaoService = KakaoService_1 = class KakaoService {
         }
     }
     async searchNearby(lat, lng, radiusM = 3000, page = 1) {
-        const categoryCodes = 'CE7,FD6,OL7,AT4,CT1,BK9';
-        try {
-            const { data } = await (0, rxjs_1.firstValueFrom)(this.http.get(`${this.baseUrl}/category.json`, {
-                headers: this.headers,
-                params: {
-                    category_group_code: categoryCodes,
-                    x: lng,
-                    y: lat,
-                    radius: radiusM,
-                    sort: 'distance',
-                    size: 15,
-                    page,
-                },
-            }));
-            const places = [];
-            for (const doc of data.documents) {
-                places.push(this.toPlace(doc));
+        const categoryCodes = ['CE7', 'FD6', 'AT4', 'CT1', 'BK9', 'OL7'];
+        const results = await Promise.allSettled(categoryCodes.map((code) => (0, rxjs_1.firstValueFrom)(this.http.get(`${this.baseUrl}/category.json`, {
+            headers: this.headers,
+            params: {
+                category_group_code: code,
+                x: lng,
+                y: lat,
+                radius: radiusM,
+                sort: 'distance',
+                size: 5,
+                page,
+            },
+        })).then((res) => res.data.documents.map((doc) => this.toPlace(doc)))));
+        const sets = results
+            .filter((r) => r.status === 'fulfilled')
+            .map((r) => r.value);
+        const seen = new Set();
+        const merged = [];
+        const maxLen = Math.max(...sets.map((s) => s.length), 0);
+        for (let i = 0; i < maxLen && merged.length < 15; i++) {
+            for (const set of sets) {
+                if (merged.length >= 15)
+                    break;
+                const place = set[i];
+                if (place && !seen.has(place.id)) {
+                    seen.add(place.id);
+                    merged.push(place);
+                }
             }
-            return places;
         }
-        catch (err) {
-            this.logger.error('카카오 반경 검색 실패', err);
-            return [];
-        }
+        return merged;
     }
     toPlace(p) {
         const category = this.detectCategory(p.category_group_code, p.place_name);

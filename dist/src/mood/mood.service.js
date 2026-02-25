@@ -16,17 +16,20 @@ const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../prisma/prisma.service");
 const kakao_service_1 = require("../place/kakao.service");
 const google_places_service_1 = require("../place/google-places.service");
+const place_service_1 = require("../place/place.service");
 let MoodService = MoodService_1 = class MoodService {
     prisma;
     config;
     kakao;
     googlePlaces;
+    placeService;
     logger = new common_1.Logger(MoodService_1.name);
-    constructor(prisma, config, kakao, googlePlaces) {
+    constructor(prisma, config, kakao, googlePlaces, placeService) {
         this.prisma = prisma;
         this.config = config;
         this.kakao = kakao;
         this.googlePlaces = googlePlaces;
+        this.placeService = placeService;
     }
     async search(query, userId, lat, lng) {
         const searchLat = lat ?? 37.5665;
@@ -35,10 +38,12 @@ let MoodService = MoodService_1 = class MoodService {
         const analysis = quickMatch ?? (await this.analyzeWithGemini(query));
         const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng);
         const enrichedResults = await this.googlePlaces.enrichPlaces(kakaoResults);
-        this.saveMoodSearchLog(query, analysis.summary, userId, enrichedResults).catch((err) => this.logger.error('검색 로그 저장 실패', err));
+        await this.placeService.upsertKakaoPlaces(enrichedResults);
+        const mergedResults = await this.placeService.mergeDbRatings(enrichedResults);
+        this.saveMoodSearchLog(query, analysis.summary, userId, mergedResults).catch((err) => this.logger.error('검색 로그 저장 실패', err));
         return {
             summary: analysis.summary,
-            places: enrichedResults,
+            places: mergedResults,
             keywords: analysis.keywords,
             query,
             fallback: false,
@@ -60,9 +65,6 @@ let MoodService = MoodService_1 = class MoodService {
                         temperature: 0.7,
                         maxOutputTokens: 1000,
                         responseMimeType: 'application/json',
-                    },
-                    thinkingConfig: {
-                        thinkingBudget: 0,
                     },
                 }),
             });
@@ -118,8 +120,10 @@ let MoodService = MoodService_1 = class MoodService {
             행복: { summary: '😊 행복한 기분엔 활기찬 카페나 공원이 잘 어울려요!', keywords: ['카페', '공원', '맛집'] },
             평온: { summary: '😌 평온한 마음엔 조용한 북카페가 딱이에요.', keywords: ['북카페', '공원', '조용한 카페'] },
             신남: { summary: '🥳 신나는 날엔 노래방이나 볼링 어때요?', keywords: ['노래방', '볼링장', '보드게임카페'] },
+            신나: { summary: '🥳 신나는 날엔 노래방이나 볼링 어때요?', keywords: ['노래방', '볼링장', '보드게임카페'] },
             우울: { summary: '😔 우울할 땐 찜질방에서 몸을 녹여봐요.', keywords: ['찜질방', '카페', '공원'] },
             열정: { summary: '🔥 열정이 넘칠 때는 활기찬 공간이 좋아요!', keywords: ['클라이밍', '볼링장', '레스토랑'] },
+            생각: { summary: '💭 생각 정리엔 조용한 공간이 좋아요.', keywords: ['북카페', '공원', '독서실'] },
             지침: { summary: '😪 지쳤을 땐 조용히 쉴 수 있는 곳으로.', keywords: ['찜질방', '공원', '조용한 카페'] },
             지쳐: { summary: '😪 지쳐있을 때 따뜻하게 쉬어가요.', keywords: ['찜질방', '공원', '조용한 카페'] },
             배고파: { summary: '🍽️ 배고플 땐 맛집으로 고고!', keywords: ['맛집', '레스토랑', '이자카야'] },
@@ -197,7 +201,8 @@ exports.MoodService = MoodService = MoodService_1 = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         config_1.ConfigService,
         kakao_service_1.KakaoService,
-        google_places_service_1.GooglePlacesService])
+        google_places_service_1.GooglePlacesService,
+        place_service_1.PlaceService])
 ], MoodService);
 const DEFAULT_PROMPT = `
 당신은 감성 장소 큐레이터입니다.

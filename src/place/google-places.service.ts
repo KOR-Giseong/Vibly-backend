@@ -7,6 +7,8 @@ interface GooglePlace {
   rating?: number;
   userRatingCount?: number;
   photos?: { name: string }[];
+  regularOpeningHours?: { weekdayDescriptions?: string[] };
+  editorialSummary?: { text?: string };
 }
 
 interface GoogleTextSearchResponse {
@@ -25,7 +27,7 @@ export class GooglePlacesService {
   }
 
   /**
-   * 카카오 검색 결과 목록에 Google Places 사진 + 평점을 보완합니다.
+   * 카카오 검색 결과 목록에 Google Places 사진 + 평점 + 영업시간 + 소개를 보완합니다.
    * 실패해도 원본 place를 그대로 반환합니다.
    */
   async enrichPlaces(places: Place[]): Promise<Place[]> {
@@ -50,11 +52,18 @@ export class GooglePlacesService {
         ? this.buildPhotoUrl(result.photos[0].name)
         : undefined;
 
+      // 영업시간: "월요일: 오전 9:00 ~ 오후 10:00" → "오전 9:00 ~ 오후 10:00"
+      const weekday = result.regularOpeningHours?.weekdayDescriptions?.[0];
+      const hours = weekday?.replace(/^[가-힣]+요일:\s*/, '');
+
       return {
         ...place,
         imageUrl: photoUrl ?? place.imageUrl,
-        rating: result.rating ?? place.rating,
-        reviewCount: result.userRatingCount ?? place.reviewCount,
+        // Vibly rating은 건드리지 않음 → googleRating / googleReviewCount으로 분리
+        googleRating: result.rating ?? place.googleRating,
+        googleReviewCount: result.userRatingCount ?? place.googleReviewCount,
+        hours: hours ?? place.hours,
+        description: result.editorialSummary?.text ?? place.description,
       };
     } catch (err) {
       this.logger.warn(`Google 보완 실패: ${place.name}`, err);
@@ -69,7 +78,7 @@ export class GooglePlacesService {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': this.apiKey,
         'X-Goog-FieldMask':
-          'places.id,places.rating,places.userRatingCount,places.photos',
+          'places.id,places.rating,places.userRatingCount,places.photos,places.regularOpeningHours,places.editorialSummary',
       },
       body: JSON.stringify({
         textQuery: query,
@@ -91,5 +100,28 @@ export class GooglePlacesService {
   /** Google Places 사진 URL 생성 */
   private buildPhotoUrl(photoName: string): string {
     return `${this.baseUrl}/${photoName}/media?maxWidthPx=400&key=${this.apiKey}`;
+  }
+
+  /**
+   * 단일 장소의 Google 데이터 (평점·리뷰수·사진) 조회.
+   * place detail 화면에서 사용.
+   */
+  async getGoogleData(name: string, address: string): Promise<{
+    googleRating?: number;
+    googleReviewCount?: number;
+    imageUrl?: string;
+  } | null> {
+    if (!this.apiKey) return null;
+    try {
+      const result = await this.textSearch(`${name} ${address}`);
+      if (!result) return null;
+      return {
+        googleRating: result.rating,
+        googleReviewCount: result.userRatingCount,
+        imageUrl: result.photos?.[0] ? this.buildPhotoUrl(result.photos[0].name) : undefined,
+      };
+    } catch {
+      return null;
+    }
   }
 }

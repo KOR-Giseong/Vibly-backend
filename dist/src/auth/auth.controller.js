@@ -15,8 +15,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const throttler_1 = require("@nestjs/throttler");
 const auth_service_1 = require("./auth.service");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
+const email_signup_dto_1 = require("./dto/email-signup.dto");
+const email_login_dto_1 = require("./dto/email-login.dto");
+const social_login_dto_1 = require("./dto/social-login.dto");
+const refresh_token_dto_1 = require("./dto/refresh-token.dto");
+const update_profile_dto_1 = require("./dto/update-profile.dto");
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
@@ -29,10 +35,10 @@ let AuthController = class AuthController {
         return this.authService.emailLogin(dto.email, dto.password);
     }
     googleLogin(dto) {
-        return this.authService.googleLogin(dto.idToken, dto.redirectUri);
+        return this.authService.googleLogin(dto.idToken, dto.redirectUri ?? '');
     }
     kakaoLogin(dto) {
-        return this.authService.kakaoLogin(dto.idToken, dto.redirectUri);
+        return this.authService.kakaoLogin(dto.idToken, dto.redirectUri ?? '');
     }
     appleLogin(dto) {
         return this.authService.appleLogin(dto.idToken);
@@ -50,50 +56,59 @@ let AuthController = class AuthController {
         return this.authService.checkNickname(nickname, req.user.id);
     }
     updateProfile(req, dto) {
-        return this.authService.updateProfile(req.user.id, dto);
+        return this.authService.updateProfile(req.user.id, {
+            nickname: dto.nickname ?? '',
+            preferredVibes: dto.preferredVibes ?? [],
+        });
     }
 };
 exports.AuthController = AuthController;
 __decorate([
     (0, common_1.Post)('email/signup'),
+    (0, throttler_1.Throttle)({ auth: {} }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [email_signup_dto_1.EmailSignupDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "emailSignup", null);
 __decorate([
     (0, common_1.Post)('email/login'),
+    (0, throttler_1.Throttle)({ auth: {} }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [email_login_dto_1.EmailLoginDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "emailLogin", null);
 __decorate([
     (0, common_1.Post)('google'),
+    (0, throttler_1.Throttle)({ auth: {} }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [social_login_dto_1.SocialLoginDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "googleLogin", null);
 __decorate([
     (0, common_1.Post)('kakao'),
+    (0, throttler_1.Throttle)({ auth: {} }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [social_login_dto_1.SocialLoginDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "kakaoLogin", null);
 __decorate([
     (0, common_1.Post)('apple'),
+    (0, throttler_1.Throttle)({ auth: {} }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [social_login_dto_1.SocialLoginDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "appleLogin", null);
 __decorate([
     (0, common_1.Post)('refresh'),
+    (0, throttler_1.Throttle)({ auth: {} }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [refresh_token_dto_1.RefreshTokenDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "refresh", null);
 __decorate([
@@ -102,7 +117,7 @@ __decorate([
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, refresh_token_dto_1.RefreshTokenDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "logout", null);
 __decorate([
@@ -131,7 +146,7 @@ __decorate([
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, update_profile_dto_1.UpdateProfileDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "updateProfile", null);
 exports.AuthController = AuthController = __decorate([

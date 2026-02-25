@@ -1,7 +1,8 @@
-import { Controller, Post, Get, Body, Query, UseGuards, Req, Optional } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MoodService } from './mood.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { MoodSearchDto } from './dto/mood-search.dto';
 
 @ApiTags('Mood')
 @Controller('mood')
@@ -12,7 +13,7 @@ export class MoodController {
   @Post('search')
   search(
     @Req() req: any,
-    @Body() body: { query: string; lat?: number; lng?: number },
+    @Body() body: MoodSearchDto,
   ) {
     const userId = (req.user as { id?: string } | undefined)?.id;
     return this.moodService.search(body.query, userId, body.lat, body.lng);

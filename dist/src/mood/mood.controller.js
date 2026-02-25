@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const mood_service_1 = require("./mood.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
+const mood_search_dto_1 = require("./dto/mood-search.dto");
 let MoodController = class MoodController {
     moodService;
     constructor(moodService) {
@@ -36,7 +37,7 @@ __decorate([
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, mood_search_dto_1.MoodSearchDto]),
     __metadata("design:returntype", void 0)
 ], MoodController.prototype, "search", null);
 __decorate([

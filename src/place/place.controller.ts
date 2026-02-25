@@ -2,6 +2,9 @@ import { Controller, Get, Post, Param, Query, Body, UseGuards, Req } from '@nest
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PlaceService } from './place.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import { CheckInDto } from './dto/checkin.dto';
+import { AddReviewDto } from './dto/add-review.dto';
 
 @ApiTags('Place')
 @Controller('places')
@@ -36,8 +39,9 @@ export class PlaceController {
   }
 
   @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.placeService.getById(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  getById(@Req() req: any, @Param('id') id: string) {
+    return this.placeService.getById(id, req.user?.id);
   }
 
   @Post(':id/bookmark')
@@ -50,7 +54,23 @@ export class PlaceController {
   @Post(':id/checkin')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  checkIn(@Req() req: any, @Param('id') id: string, @Body() body: { mood: string; note?: string; imageUrl?: string }) {
+  checkIn(@Req() req: any, @Param('id') id: string, @Body() body: CheckInDto) {
     return this.placeService.checkIn(req.user.id, id, body.mood, body.note, body.imageUrl);
+  }
+
+  @Get(':id/reviews')
+  getReviews(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.placeService.getReviews(id, +(page ?? 1), +(limit ?? 20));
+  }
+
+  @Post(':id/reviews')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  addReview(@Req() req: any, @Param('id') id: string, @Body() body: AddReviewDto) {
+    return this.placeService.addReview(req.user.id, id, body.rating, body.body);
   }
 }

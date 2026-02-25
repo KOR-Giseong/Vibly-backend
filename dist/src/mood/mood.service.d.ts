@@ -2,13 +2,15 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { KakaoService } from '../place/kakao.service';
 import { GooglePlacesService } from '../place/google-places.service';
+import { PlaceService } from '../place/place.service';
 export declare class MoodService {
     private prisma;
     private config;
     private kakao;
     private googlePlaces;
+    private placeService;
     private readonly logger;
-    constructor(prisma: PrismaService, config: ConfigService, kakao: KakaoService, googlePlaces: GooglePlacesService);
+    constructor(prisma: PrismaService, config: ConfigService, kakao: KakaoService, googlePlaces: GooglePlacesService, placeService: PlaceService);
     search(query: string, userId?: string, lat?: number, lng?: number): Promise<{
         summary: string;
         places: import("../place/types/kakao.types").Place[];

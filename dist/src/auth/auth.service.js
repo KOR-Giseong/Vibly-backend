@@ -48,6 +48,8 @@ const jwt_1 = require("@nestjs/jwt");
 const config_1 = require("@nestjs/config");
 const axios_1 = require("@nestjs/axios");
 const bcrypt = __importStar(require("bcryptjs"));
+const crypto = __importStar(require("crypto"));
+const jwt = __importStar(require("jsonwebtoken"));
 const rxjs_1 = require("rxjs");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
@@ -61,6 +63,9 @@ let AuthService = class AuthService {
         this.jwt = jwt;
         this.config = config;
         this.http = http;
+        if (!config.get('JWT_REFRESH_SECRET')) {
+            throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
+        }
     }
     async emailSignup(email, password, name) {
         const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -120,15 +125,31 @@ let AuthService = class AuthService {
     }
     async appleLogin(idToken) {
         try {
-            const payload = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString());
-            const { sub, email } = payload;
-            if (!sub)
-                throw new Error('sub 없음');
+            const { sub, email } = await this.verifyAppleToken(idToken);
             return this.upsertSocialUser(client_1.AuthProvider.APPLE, sub, email ?? null, 'Apple 사용자');
         }
         catch {
             throw new common_1.BadRequestException('Apple 로그인에 실패했어요.');
         }
+    }
+    async verifyAppleToken(idToken) {
+        const [headerB64] = idToken.split('.');
+        const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+        const { data: jwks } = await (0, rxjs_1.firstValueFrom)(this.http.get('https://appleid.apple.com/auth/keys'));
+        const appleKey = jwks.keys.find((k) => k.kid === header.kid);
+        if (!appleKey)
+            throw new Error('일치하는 Apple 공개키가 없어요.');
+        const publicKey = crypto.createPublicKey({ key: appleKey, format: 'jwk' });
+        const pem = publicKey.export({ type: 'spki', format: 'pem' });
+        const clientId = this.config.get('APPLE_CLIENT_ID');
+        const payload = jwt.verify(idToken, pem, {
+            algorithms: ['RS256'],
+            issuer: 'https://appleid.apple.com',
+            ...(clientId ? { audience: clientId } : {}),
+        });
+        if (!payload.sub)
+            throw new Error('sub 없음');
+        return payload;
     }
     async upsertSocialUser(provider, providerId, email, name) {
         let user = await this.prisma.user.findFirst({ where: { provider, providerId } });
@@ -158,8 +179,10 @@ let AuthService = class AuthService {
         });
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 7);
-        await this.prisma.refreshToken.create({
-            data: { userId, token: refreshToken, expiresAt },
+        await this.prisma.refreshToken.upsert({
+            where: { token: refreshToken },
+            create: { userId, token: refreshToken, expiresAt },
+            update: { expiresAt },
         });
         return { accessToken, refreshToken };
     }

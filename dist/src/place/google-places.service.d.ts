@@ -10,4 +10,9 @@ export declare class GooglePlacesService {
     private enrichOne;
     private textSearch;
     private buildPhotoUrl;
+    getGoogleData(name: string, address: string): Promise<{
+        googleRating?: number;
+        googleReviewCount?: number;
+        imageUrl?: string;
+    } | null>;
 }

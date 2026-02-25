@@ -122,40 +122,58 @@ export class KakaoService {
     }
   }
 
-  // ── 반경 내 카테고리 검색 ──────────────────────────────────────────────────
+  // ── 반경 내 카테고리 검색 (카테고리별 병렬 호출 후 인터리빙 병합) ──────────
   async searchNearby(
     lat: number,
     lng: number,
     radiusM = 3000,
     page = 1,
   ): Promise<Place[]> {
-    const categoryCodes = 'CE7,FD6,OL7,AT4,CT1,BK9';
+    // 카카오 카테고리 API는 코드 하나씩만 허용 → 병렬 호출
+    const categoryCodes = ['CE7', 'FD6', 'AT4', 'CT1', 'BK9', 'OL7'];
 
-    try {
-      const { data } = await firstValueFrom(
-        this.http.get<KakaoSearchResponse>(`${this.baseUrl}/category.json`, {
-          headers: this.headers,
-          params: {
-            category_group_code: categoryCodes,
-            x: lng,
-            y: lat,
-            radius: radiusM,
-            sort: 'distance',
-            size: 15,
-            page,
-          },
-        }),
-      );
+    const results = await Promise.allSettled(
+      categoryCodes.map((code) =>
+        firstValueFrom(
+          this.http.get<KakaoSearchResponse>(`${this.baseUrl}/category.json`, {
+            headers: this.headers,
+            params: {
+              category_group_code: code,
+              x: lng,
+              y: lat,
+              radius: radiusM,
+              sort: 'distance',
+              size: 5,
+              page,
+            },
+          }),
+        ).then((res) => res.data.documents.map((doc) => this.toPlace(doc))),
+      ),
+    );
 
-      const places: Place[] = [];
-      for (const doc of data.documents) {
-        places.push(this.toPlace(doc));
+    // 카테고리별 결과를 인터리빙 (한 카테고리에 치우치지 않도록)
+    const sets = results
+      .filter(
+        (r): r is PromiseFulfilledResult<Place[]> => r.status === 'fulfilled',
+      )
+      .map((r) => r.value);
+
+    const seen = new Set<string>();
+    const merged: Place[] = [];
+    const maxLen = Math.max(...sets.map((s) => s.length), 0);
+
+    for (let i = 0; i < maxLen && merged.length < 15; i++) {
+      for (const set of sets) {
+        if (merged.length >= 15) break;
+        const place = set[i];
+        if (place && !seen.has(place.id)) {
+          seen.add(place.id);
+          merged.push(place);
+        }
       }
-      return places;
-    } catch (err) {
-      this.logger.error('카카오 반경 검색 실패', err);
-      return [];
     }
+
+    return merged;
   }
 
   // ── 카카오 응답 → 내부 Place 타입으로 변환 ─────────────────────────────────

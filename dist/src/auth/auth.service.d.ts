@@ -28,6 +28,7 @@ export declare class AuthService {
         accessToken: string;
         refreshToken: string;
     }>;
+    private verifyAppleToken;
     private upsertSocialUser;
     refresh(refreshToken: string): Promise<{
         accessToken: string;

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { KakaoService } from '../place/kakao.service';
 import { GooglePlacesService } from '../place/google-places.service';
+import { PlaceService } from '../place/place.service';
 
 interface GeminiAnalysis {
   summary: string;   // AI 한 줄 요약
@@ -18,6 +19,7 @@ export class MoodService {
     private config: ConfigService,
     private kakao: KakaoService,
     private googlePlaces: GooglePlacesService,
+    private placeService: PlaceService,
   ) {}
 
   async search(query: string, userId?: string, lat?: number, lng?: number) {
@@ -37,14 +39,20 @@ export class MoodService {
     // 3. Google Places로 사진 + 평점 보완 (API 키 없으면 자동 생략)
     const enrichedResults = await this.googlePlaces.enrichPlaces(kakaoResults);
 
-    // 4. 검색 로그 비동기 저장 (결과를 기다리지 않음)
-    this.saveMoodSearchLog(query, analysis.summary, userId, enrichedResults).catch(
+    // 4. 검색된 카카오 장소를 DB에 저장 (상세 조회 시 404 방지를 위해 await)
+    await this.placeService.upsertKakaoPlaces(enrichedResults);
+
+    // 4b. DB 앱 리뷰 평점 병합 (리뷰가 있는 장소는 앱 평점 우선 표시)
+    const mergedResults = await this.placeService.mergeDbRatings(enrichedResults);
+
+    // 5. 검색 로그 비동기 저장 (결과를 기다리지 않음)
+    this.saveMoodSearchLog(query, analysis.summary, userId, mergedResults).catch(
       (err) => this.logger.error('검색 로그 저장 실패', err),
     );
 
     return {
       summary:  analysis.summary,
-      places:   enrichedResults,
+      places:   mergedResults,
       keywords: analysis.keywords,
       query,
       fallback: false,
@@ -73,9 +81,6 @@ export class MoodService {
               temperature: 0.7,
               maxOutputTokens: 1000,
               responseMimeType: 'application/json',
-            },
-            thinkingConfig: {
-              thinkingBudget: 0,
             },
           }),
         },
@@ -150,8 +155,10 @@ export class MoodService {
       행복:    { summary: '😊 행복한 기분엔 활기찬 카페나 공원이 잘 어울려요!', keywords: ['카페', '공원', '맛집'] },
       평온:    { summary: '😌 평온한 마음엔 조용한 북카페가 딱이에요.', keywords: ['북카페', '공원', '조용한 카페'] },
       신남:    { summary: '🥳 신나는 날엔 노래방이나 볼링 어때요?', keywords: ['노래방', '볼링장', '보드게임카페'] },
+      신나:    { summary: '🥳 신나는 날엔 노래방이나 볼링 어때요?', keywords: ['노래방', '볼링장', '보드게임카페'] },
       우울:    { summary: '😔 우울할 땐 찜질방에서 몸을 녹여봐요.', keywords: ['찜질방', '카페', '공원'] },
       열정:    { summary: '🔥 열정이 넘칠 때는 활기찬 공간이 좋아요!', keywords: ['클라이밍', '볼링장', '레스토랑'] },
+      생각:    { summary: '💭 생각 정리엔 조용한 공간이 좋아요.', keywords: ['북카페', '공원', '독서실'] },
       지침:    { summary: '😪 지쳤을 땐 조용히 쉴 수 있는 곳으로.', keywords: ['찜질방', '공원', '조용한 카페'] },
       지쳐:    { summary: '😪 지쳐있을 때 따뜻하게 쉬어가요.', keywords: ['찜질방', '공원', '조용한 카페'] },
       배고파:  { summary: '🍽️ 배고플 땐 맛집으로 고고!', keywords: ['맛집', '레스토랑', '이자카야'] },

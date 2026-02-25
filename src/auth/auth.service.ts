@@ -3,6 +3,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthProvider } from '@prisma/client';
@@ -14,7 +16,11 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private http: HttpService,
-  ) {}
+  ) {
+    if (!config.get<string>('JWT_REFRESH_SECRET')) {
+      throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
+    }
+  }
 
   // ── Email Auth ─────────────────────────────────────────────────────────────
 
@@ -100,16 +106,39 @@ export class AuthService {
 
   async appleLogin(idToken: string) {
     try {
-      // Apple identity token은 JWT - 페이로드 디코딩 (서명 검증 생략, 프로덕션에서는 추가)
-      const payload = JSON.parse(
-        Buffer.from(idToken.split('.')[1], 'base64url').toString(),
-      );
-      const { sub, email } = payload;
-      if (!sub) throw new Error('sub 없음');
+      const { sub, email } = await this.verifyAppleToken(idToken);
       return this.upsertSocialUser(AuthProvider.APPLE, sub, email ?? null, 'Apple 사용자');
     } catch {
       throw new BadRequestException('Apple 로그인에 실패했어요.');
     }
+  }
+
+  private async verifyAppleToken(idToken: string): Promise<{ sub: string; email?: string }> {
+    // 1. JWT 헤더에서 kid 추출
+    const [headerB64] = idToken.split('.');
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString()) as { kid: string; alg: string };
+
+    // 2. Apple JWKS 공개키 가져오기
+    const { data: jwks } = await firstValueFrom(
+      this.http.get<{ keys: JsonWebKey[] }>('https://appleid.apple.com/auth/keys'),
+    );
+    const appleKey = jwks.keys.find((k: any) => k.kid === header.kid) as crypto.JsonWebKey | undefined;
+    if (!appleKey) throw new Error('일치하는 Apple 공개키가 없어요.');
+
+    // 3. JWK → PEM 변환
+    const publicKey = crypto.createPublicKey({ key: appleKey, format: 'jwk' });
+    const pem = publicKey.export({ type: 'spki', format: 'pem' });
+
+    // 4. 서명 검증 (issuer, audience 포함)
+    const clientId = this.config.get<string>('APPLE_CLIENT_ID');
+    const payload = jwt.verify(idToken, pem as string, {
+      algorithms: ['RS256'],
+      issuer: 'https://appleid.apple.com',
+      ...(clientId ? { audience: clientId } : {}),
+    }) as { sub: string; email?: string };
+
+    if (!payload.sub) throw new Error('sub 없음');
+    return payload;
   }
 
   // ── Social 공통 ────────────────────────────────────────────────────────────
@@ -152,8 +181,10 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await this.prisma.refreshToken.create({
-      data: { userId, token: refreshToken, expiresAt },
+    await this.prisma.refreshToken.upsert({
+      where: { token: refreshToken },
+      create: { userId, token: refreshToken, expiresAt },
+      update: { expiresAt },
     });
 
     return { accessToken, refreshToken };
