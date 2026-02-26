@@ -118,6 +118,25 @@ export class SupportController {
     return this.supportService.getUsers(req.user.id);
   }
 
+  @Patch('admin/users/:id/suspend')
+  suspendUser(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { reason: string; suspendedUntil: string },
+  ) {
+    return this.supportService.suspendUser(
+      req.user.id,
+      id,
+      body.reason,
+      new Date(body.suspendedUntil),
+    );
+  }
+
+  @Patch('admin/users/:id/unsuspend')
+  unsuspendUser(@Req() req: any, @Param('id') id: string) {
+    return this.supportService.unsuspendUser(req.user.id, id);
+  }
+
   @Patch('admin/users/:id/toggle-admin')
   toggleAdmin(@Req() req: any, @Param('id') id: string) {
     return this.supportService.toggleAdmin(req.user.id, id);

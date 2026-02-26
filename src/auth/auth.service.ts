@@ -229,6 +229,8 @@ export class AuthService {
         isProfileComplete: true,
         status: true,
         isAdmin: true,
+        suspendedUntil: true,
+        suspendReason: true,
         createdAt: true,
         subscriptions: {
           where: { expiresAt: { gt: new Date() } },

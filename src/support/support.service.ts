@@ -179,11 +179,36 @@ export class SupportService {
         avatarUrl: true,
         isAdmin: true,
         status: true,
+        suspendedUntil: true,
+        suspendReason: true,
         isProfileComplete: true,
         provider: true,
         createdAt: true,
         _count: { select: { checkIns: true, reviews: true, bookmarks: true } },
       },
+    });
+  }
+
+  async suspendUser(adminId: string, targetId: string, reason: string, suspendedUntil: Date) {
+    await this.assertAdmin(adminId);
+    const target = await this.prisma.user.findUnique({ where: { id: targetId } });
+    if (!target) throw new NotFoundException('사용자를 찾을 수 없어요.');
+    if (target.isAdmin) throw new ForbiddenException('관리자는 정지할 수 없어요.');
+    return this.prisma.user.update({
+      where: { id: targetId },
+      data: { status: 'SUSPENDED', suspendReason: reason, suspendedUntil },
+      select: { id: true, name: true, status: true, suspendedUntil: true, suspendReason: true },
+    });
+  }
+
+  async unsuspendUser(adminId: string, targetId: string) {
+    await this.assertAdmin(adminId);
+    const target = await this.prisma.user.findUnique({ where: { id: targetId } });
+    if (!target) throw new NotFoundException('사용자를 찾을 수 없어요.');
+    return this.prisma.user.update({
+      where: { id: targetId },
+      data: { status: 'ACTIVE', suspendReason: null, suspendedUntil: null },
+      select: { id: true, name: true, status: true },
     });
   }
 
