@@ -253,34 +253,201 @@ export class MoodService {
 
   // ── 바이브 리포트 ────────────────────────────────────────────────────────────
   async getVibeReport(userId: string, period: string) {
-    const existing = await this.prisma.vibeReport.findUnique({
-      where: { userId_period: { userId, period } },
-    });
-    if (existing) return existing;
+    const now = new Date();
+    let startDate: Date;
 
+    if (period === 'weekly') {
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() - 6);
+      startDate.setHours(0, 0, 0, 0);
+    } else {
+      // 월간: 이번 달 1일 00:00:00
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    }
+
+    // 해당 기간 체크인 + 장소 정보
     const checkIns = await this.prisma.checkIn.findMany({
-      where: { userId },
+      where: { userId, createdAt: { gte: startDate } },
       include: { place: true },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+      orderBy: { createdAt: 'asc' },
     });
 
+    // 리뷰 수
+    const reviewCount = await this.prisma.review.count({
+      where: { userId, createdAt: { gte: startDate } },
+    });
+
+    const total = checkIns.length;
+
+    // ── 감정 분포 ────────────────────────────────────────────────────────────
     const moodCounts: Record<string, number> = {};
     checkIns.forEach((c) => {
       moodCounts[c.mood] = (moodCounts[c.mood] ?? 0) + 1;
     });
 
-    const summary = {
-      totalCheckins: checkIns.length,
-      topMoods:      Object.entries(moodCounts)
-                       .sort((a, b) => b[1] - a[1])
-                       .slice(0, 3),
-      topPlaces:     checkIns.slice(0, 3).map((c) => ({
-                       id: c.placeId, name: c.place.name,
-                     })),
+    const MOOD_META: Record<string, { label: string; emoji: string; color: string }> = {
+      happy:      { label: '행복함',  emoji: '😊', color: '#FACC15' },
+      peaceful:   { label: '평화로움', emoji: '😌', color: '#60A5FA' },
+      excited:    { label: '신남',    emoji: '🥳', color: '#F472B6' },
+      sad:        { label: '우울함',  emoji: '😔', color: '#C084FC' },
+      thinking:   { label: '생각중',  emoji: '💭', color: '#9CA3AF' },
+      passionate: { label: '열정적',  emoji: '🔥', color: '#F87171' },
     };
 
-    return this.prisma.vibeReport.create({ data: { userId, period, summary } });
+    const emotionDistribution = Object.entries(moodCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([mood, count]) => ({
+        mood,
+        label:      MOOD_META[mood]?.label  ?? mood,
+        emoji:      MOOD_META[mood]?.emoji  ?? '✨',
+        color:      MOOD_META[mood]?.color  ?? '#A78BFA',
+        count,
+        percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+      }));
+
+    // ── 일별 무드 (주간 전용) ────────────────────────────────────────────────
+    const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+    const dailyMoods = period === 'weekly'
+      ? Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(startDate);
+          d.setDate(startDate.getDate() + i);
+          const dayStr = d.toDateString();
+          const dayCheckIns = checkIns.filter(
+            (c) => new Date(c.createdAt).toDateString() === dayStr,
+          );
+          const topMood = dayCheckIns.length > 0
+            ? Object.entries(
+                dayCheckIns.reduce((acc, c) => {
+                  acc[c.mood] = (acc[c.mood] ?? 0) + 1;
+                  return acc;
+                }, {} as Record<string, number>),
+              ).sort((a, b) => b[1] - a[1])[0][0]
+            : null;
+          return {
+            date:          d.toISOString(),
+            dayLabel:      DAY_LABELS[d.getDay()],
+            mood:          topMood,
+            emoji:         topMood ? (MOOD_META[topMood]?.emoji ?? '✨') : null,
+            checkInCount:  dayCheckIns.length,
+          };
+        })
+      : [];
+
+    // ── 카테고리(Top 바이브) ─────────────────────────────────────────────────
+    const CATEGORY_META: Record<string, { label: string; color: string }> = {
+      CAFE:       { label: '카페',    color: '#7C3AED' },
+      RESTAURANT: { label: '레스토랑', color: '#2563EB' },
+      BAR:        { label: '바',      color: '#DB2777' },
+      PARK:       { label: '공원',    color: '#16A34A' },
+      CULTURAL:   { label: '문화공간', color: '#D97706' },
+      BOOKSTORE:  { label: '서점',    color: '#0891B2' },
+      BOWLING:    { label: '볼링장',  color: '#F97316' },
+      KARAOKE:    { label: '노래방',  color: '#EC4899' },
+      SPA:        { label: '찜질방',  color: '#8B5CF6' },
+      ESCAPE:     { label: '방탈출',  color: '#64748B' },
+      ARCADE:     { label: '오락실',  color: '#F59E0B' },
+      ETC:        { label: '기타',    color: '#9CA3AF' },
+    };
+    const categoryCounts: Record<string, number> = {};
+    checkIns.forEach((c) => {
+      const cat = c.place.category as string;
+      categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+    });
+    const topCategories = Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cat, count]) => ({
+        category:   cat,
+        label:      CATEGORY_META[cat]?.label ?? '기타',
+        color:      CATEGORY_META[cat]?.color ?? '#9CA3AF',
+        count,
+        percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+      }));
+
+    // ── 방문 패턴 인사이트 ──────────────────────────────────────────────────
+    const insights: { emoji: string; title: string; desc: string }[] = [];
+
+    // 1. 가장 많이 방문한 카테고리
+    if (topCategories[0]) {
+      insights.push({
+        emoji: '📍',
+        title: `${topCategories[0].label}를 가장 많이 방문`,
+        desc:  `이번 ${period === 'weekly' ? '주' : '달'} 방문의 ${topCategories[0].percentage}%가 ${topCategories[0].label}이었어요.`,
+      });
+    }
+
+    // 2. 선호 시간대
+    const hourBuckets: Record<string, number> = { 아침: 0, 오후: 0, 저녁: 0, 심야: 0 };
+    checkIns.forEach((c) => {
+      const h = new Date(c.createdAt).getHours();
+      if (h >= 5  && h < 12) hourBuckets['아침']++;
+      else if (h >= 12 && h < 17) hourBuckets['오후']++;
+      else if (h >= 17 && h < 22) hourBuckets['저녁']++;
+      else                         hourBuckets['심야']++;
+    });
+    const topTime = Object.entries(hourBuckets).sort((a, b) => b[1] - a[1])[0];
+    if (topTime && topTime[1] > 0) {
+      insights.push({
+        emoji: topTime[0] === '아침' ? '☀️' : topTime[0] === '오후' ? '🌤️' : topTime[0] === '저녁' ? '🌙' : '🌃',
+        title: `${topTime[0]} 시간대에 활발`,
+        desc:  `${topTime[0]}에 가장 많은 체크인을 했어요.`,
+      });
+    }
+
+    // 3. 가장 많이 방문한 장소
+    const placeCounts: Record<string, { name: string; count: number }> = {};
+    checkIns.forEach((c) => {
+      if (!placeCounts[c.placeId]) placeCounts[c.placeId] = { name: c.place.name, count: 0 };
+      placeCounts[c.placeId].count++;
+    });
+    const topPlace = Object.values(placeCounts).sort((a, b) => b.count - a.count)[0];
+    if (topPlace && topPlace.count > 1) {
+      insights.push({
+        emoji: '⭐',
+        title: `${topPlace.name} 단골 방문`,
+        desc:  `이번 ${period === 'weekly' ? '주' : '달'} ${topPlace.name}을(를) ${topPlace.count}회 방문했어요.`,
+      });
+    }
+
+    // 4. 긍정 무드 비율
+    const POSITIVE = ['happy', 'excited', 'peaceful', 'passionate'];
+    const positiveCount = checkIns.filter((c) => POSITIVE.includes(c.mood)).length;
+    if (total > 0) {
+      const positiveRatio = Math.round((positiveCount / total) * 100);
+      insights.push({
+        emoji: positiveRatio >= 70 ? '🌟' : '💫',
+        title: `긍정 에너지 ${positiveRatio}%`,
+        desc:  `이번 ${period === 'weekly' ? '주' : '달'} 방문의 ${positiveRatio}%가 긍정적인 기분이었어요!`,
+      });
+    }
+
+    // ── 바이브 스코어 (긍정 비율 기반: 60~100점) ─────────────────────────────
+    const vibeScore = total > 0
+      ? Math.min(100, Math.round(60 + (positiveCount / total) * 40))
+      : 0;
+
+    // ── 고유 장소 수 ─────────────────────────────────────────────────────────
+    const uniquePlacesCount = new Set(checkIns.map((c) => c.placeId)).size;
+
+    // ── 날짜 범위 텍스트 ─────────────────────────────────────────────────────
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+    const dateRange = period === 'weekly'
+      ? `${fmt(startDate)} - ${fmt(now)}`
+      : `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
+
+    return {
+      period,
+      dateRange,
+      checkInCount:        total,
+      uniquePlacesCount,
+      reviewCount,
+      vibeScore,
+      emotionDistribution,
+      dailyMoods,
+      topCategories,
+      insights,
+    };
   }
 }
 

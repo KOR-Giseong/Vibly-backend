@@ -7,12 +7,13 @@ import { AuthModule } from './auth/auth.module';
 import { PlaceModule } from './place/place.module';
 import { MoodModule } from './mood/mood.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000,  limit: 60  }, // 일반: 60회/분
+      { name: 'default', ttl: 60_000,  limit: 120 }, // 일반: 120회/분
       { name: 'auth',    ttl: 900_000, limit: 10  }, // 인증: 10회/15분
     ]),
     PrismaModule,
@@ -20,6 +21,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     PlaceModule,
     MoodModule,
     AnalyticsModule,
+    SupportModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // Rate Limiting 전역 적용

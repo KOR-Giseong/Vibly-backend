@@ -73,21 +73,68 @@ model User {
   providerId        String?
   passwordHash      String?
   status            UserStatus @default(ACTIVE)
+  isAdmin           Boolean    @default(false)
   deletedAt         DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
-  devices       Device[]
-  sessions      RefreshToken[]
-  bookmarks     Bookmark[]
-  checkIns      CheckIn[]
-  reviews       Review[]
-  notifications Notification[]
-  subscriptions Subscription[]
-  events        UserEvent[]
-  vibeReports   VibeReport[]
+  devices         Device[]
+  sessions        RefreshToken[]
+  bookmarks       Bookmark[]
+  checkIns        CheckIn[]
+  reviews         Review[]
+  notifications   Notification[]
+  subscriptions   Subscription[]
+  events          UserEvent[]
+  vibeReports     VibeReport[]
+  supportTickets  SupportTicket[]
 
   @@index([email])
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketType {
+  FAQ
+  CHAT
+}
+
+model SupportTicket {
+  id          String       @id @default(uuid())
+  userId      String
+  type        TicketType   @default(CHAT)
+  title       String
+  body        String
+  status      TicketStatus @default(OPEN)
+  adminReply  String?
+  repliedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    ChatMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  ticketId  String
+  senderId  String   // userId or 'admin'
+  isAdmin   Boolean  @default(false)
+  body      String
+  imageUrl  String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
 }
 
 model Device {

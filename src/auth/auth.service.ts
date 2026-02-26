@@ -190,6 +190,32 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  async deleteAccount(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: 'DELETED',
+        deletedAt: new Date(),
+        email: null,
+        nickname: null,
+        name: '탈퇴한 사용자',
+        avatarUrl: null,
+      },
+    });
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    return { success: true };
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.passwordHash) throw new BadRequestException('소셜 로그인 계정은 비밀번호를 변경할 수 없어요.');
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('현재 비밀번호가 맞지 않아요.');
+    const hash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+    return { success: true };
+  }
+
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -202,6 +228,7 @@ export class AuthService {
         preferredVibes: true,
         isProfileComplete: true,
         status: true,
+        isAdmin: true,
         createdAt: true,
         subscriptions: {
           where: { expiresAt: { gt: new Date() } },
