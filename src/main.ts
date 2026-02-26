@@ -3,12 +3,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import * as express from 'express';
+import * as path from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(helmet());
+  // 아바타 이미지 static 서빙
+  app.use('/public', express.static(path.join(process.cwd(), 'public')));
 
   // 개발: 전체 허용 / 프로덕션: ALLOWED_ORIGINS 환경변수로 제한
   const isProd = process.env.NODE_ENV === 'production';
@@ -31,3 +35,4 @@ async function bootstrap() {
   console.log(`🚀 Vibly API running on port ${process.env.PORT ?? 3000}`);
 }
 bootstrap();
+

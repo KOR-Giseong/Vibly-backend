@@ -83,8 +83,23 @@ export class AuthController {
   @ApiBearerAuth()
   updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     return this.authService.updateProfile(req.user.id, {
-      nickname: dto.nickname ?? '',
-      preferredVibes: dto.preferredVibes ?? [],
+      name: dto.name,
+      nickname: dto.nickname,
+      preferredVibes: dto.preferredVibes,
     });
+  }
+
+  @Patch('avatar')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  updateAvatar(@Req() req: any, @Body() body: { base64: string }) {
+    return this.authService.updateAvatar(req.user.id, body.base64);
+  }
+
+  @Get('stats')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  getStats(@Req() req: any) {
+    return this.authService.getStats(req.user.id);
   }
 }

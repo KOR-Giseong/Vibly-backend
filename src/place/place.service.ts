@@ -359,6 +359,39 @@ export class PlaceService {
     });
   }
 
+  // ── 내 체크인 기록 목록 ──────────────────────────────────────────────────────
+  async getMyCheckins(userId: string) {
+    const checkins = await this.prisma.checkIn.findMany({
+      where: { userId },
+      include: {
+        place: {
+          include: { images: { take: 1 } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return checkins.map((c) => {
+      const p = c.place;
+      const imageUrl =
+        p.images[0]?.url ??
+        CATEGORY_IMAGE[p.category] ??
+        CATEGORY_IMAGE['ETC'];
+      return {
+        id: c.id,
+        placeId: p.id,
+        placeName: p.name,
+        category: p.category,
+        address: p.address,
+        imageUrl,
+        mood: c.mood,
+        note: c.note,
+        imageUrl_checkin: c.imageUrl,
+        createdAt: c.createdAt,
+      };
+    });
+  }
+
   // ── Public: 카카오 장소 목록을 DB로 일괄 upsert (MoodService 등에서 사용) ─
   async upsertKakaoPlaces(places: Place[]): Promise<void> {
     await Promise.all(places.map((p) => this.upsertKakaoPlace(p.id, p)));

@@ -41,6 +41,13 @@ export class PlaceController {
     return this.placeService.getBookmarks(req.user.id);
   }
 
+  @Get('my-checkins')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  getMyCheckins(@Req() req: any) {
+    return this.placeService.getMyCheckins(req.user.id);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   getById(

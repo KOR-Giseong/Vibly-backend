@@ -66,6 +66,7 @@ model User {
   email             String?    @unique
   name              String
   nickname          String?    @unique
+  avatarUrl         String?
   preferredVibes    String[]
   isProfileComplete Boolean    @default(false)
   provider          AuthProvider

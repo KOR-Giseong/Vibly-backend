@@ -191,19 +191,28 @@ export class AuthService {
   }
 
   async getMe(userId: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         email: true,
         name: true,
         nickname: true,
+        avatarUrl: true,
         preferredVibes: true,
         isProfileComplete: true,
         status: true,
         createdAt: true,
+        subscriptions: {
+          where: { expiresAt: { gt: new Date() } },
+          take: 1,
+          select: { id: true },
+        },
       },
     });
+    if (!user) return null;
+    const { subscriptions, ...rest } = user;
+    return { ...rest, isPremium: subscriptions.length > 0 };
   }
 
   async checkNickname(nickname: string, userId: string) {
@@ -213,28 +222,63 @@ export class AuthService {
     return { available: !existing };
   }
 
-  async updateProfile(userId: string, data: { nickname: string; preferredVibes: string[] }) {
-    const taken = await this.prisma.user.findFirst({
-      where: { nickname: data.nickname, NOT: { id: userId } },
-    });
-    if (taken) throw new ConflictException('이미 사용 중인 닉네임이에요.');
+  async updateProfile(userId: string, data: { name?: string; nickname?: string; preferredVibes?: string[] }) {
+    if (data.nickname) {
+      const taken = await this.prisma.user.findFirst({
+        where: { nickname: data.nickname, NOT: { id: userId } },
+      });
+      if (taken) throw new ConflictException('이미 사용 중인 닉네임이에요.');
+    }
     return this.prisma.user.update({
       where: { id: userId },
       data: {
-        nickname: data.nickname,
-        preferredVibes: data.preferredVibes,
+        ...(data.name && { name: data.name }),
+        ...(data.nickname !== undefined && { nickname: data.nickname }),
+        ...(data.preferredVibes !== undefined && { preferredVibes: data.preferredVibes }),
         isProfileComplete: true,
       },
       select: {
-        id: true,
-        email: true,
-        name: true,
-        nickname: true,
-        preferredVibes: true,
-        isProfileComplete: true,
-        status: true,
-        createdAt: true,
+        id: true, email: true, name: true, nickname: true,
+        avatarUrl: true, preferredVibes: true, isProfileComplete: true,
+        status: true, createdAt: true,
       },
     });
+  }
+
+  // ── 아바새 업데이트 ───────────────────────────────────────────────────────────────
+  async updateAvatar(userId: string, base64: string): Promise<{ avatarUrl: string }> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const ext = base64.startsWith('data:image/png') ? 'png' : 'jpg';
+    const filename = `${userId}-${Date.now()}.${ext}`;
+    const dir = path.join(process.cwd(), 'public', 'avatars');
+    await fs.mkdir(dir, { recursive: true });
+
+    // base64 데이터 URI 압도제거
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
+    await fs.writeFile(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
+
+    const host = this.config.get<string>('SERVER_URL') ?? `http://192.168.219.113:3000`;
+    const avatarUrl = `${host}/public/avatars/${filename}`;
+
+    // 이전 아바새 파일 삭제
+    const prev = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    if (prev?.avatarUrl?.includes('/public/avatars/')) {
+      const oldFile = path.join(process.cwd(), 'public', 'avatars', path.basename(prev.avatarUrl));
+      fs.unlink(oldFile).catch(() => {});
+    }
+
+    await this.prisma.user.update({ where: { id: userId }, data: { avatarUrl } });
+    return { avatarUrl };
+  }
+
+  // ── 사용자 통계 ─────────────────────────────────────────────────────────────
+  async getStats(userId: string) {
+    const [checkinCount, bookmarkCount, reviewCount] = await Promise.all([
+      this.prisma.checkIn.count({ where: { userId } }),
+      this.prisma.bookmark.count({ where: { userId } }),
+      this.prisma.review.count({ where: { userId } }),
+    ]);
+    return { checkinCount, bookmarkCount, reviewCount };
   }
 }

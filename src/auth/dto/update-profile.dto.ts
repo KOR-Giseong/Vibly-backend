@@ -3,6 +3,11 @@ import { IsOptional, IsString, MaxLength, IsArray, ArrayMaxSize } from 'class-va
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()
+  @MaxLength(20, { message: '이름은 20자 이하여야 해요.' })
+  name?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(30, { message: '닉네임은 30자 이하여야 해요.' })
   nickname?: string;
 
