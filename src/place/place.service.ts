@@ -26,6 +26,10 @@ export interface AIReason {
   description: string;
 }
 
+// ── 카테고리별 체크인 방식 ────────────────────────────────────────────────────
+const RECEIPT_REQUIRED_CATEGORIES = ['CAFE', 'RESTAURANT', 'BAR']; // 영수증 필수
+const GPS_ONLY_CATEGORIES = ['PARK', 'CULTURAL'];                   // GPS 필수
+
 @Injectable()
 export class PlaceService {
   private readonly logger = new Logger(PlaceService.name);
@@ -216,7 +220,7 @@ export class PlaceService {
     }
   }
 
-  // ── 북마크 목록 ────────────────────────────────────────────────────────────
+    // ── 북마크 목록 ────────────────────────────────────────────────────────────
   async getBookmarks(userId: string) {
     const bookmarks = await this.prisma.bookmark.findMany({
       where: { userId },
@@ -367,7 +371,23 @@ export class PlaceService {
     const place = await this.prisma.place.findUnique({ where: { id: placeId } });
     if (!place) throw new NotFoundException('장소를 찾을 수 없습니다.');
 
-    // ── 3. 악용 방지 공통 체크 ───────────────────────────────────────────────
+    // ── 3. 카테고리별 체크인 방식 검증 ─────────────────────────────────────
+    const category = place.category as string;
+    const hasReceipt = !!(receiptBuffer && receiptBuffer.length > 0);
+    const hasGps = lat != null && lng != null;
+
+    if (RECEIPT_REQUIRED_CATEGORIES.includes(category) && !hasReceipt) {
+      throw new BadRequestException(
+        `${this.toCategoryLabel(category)}는 영수증으로만 체크인할 수 있어요.`,
+      );
+    }
+    if (GPS_ONLY_CATEGORIES.includes(category) && !hasGps) {
+      throw new BadRequestException(
+        `${this.toCategoryLabel(category)}는 GPS로만 체크인할 수 있어요.`,
+      );
+    }
+
+    // ── 4. 악용 방지 공통 체크 ───────────────────────────────────────────────
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -393,7 +413,7 @@ export class PlaceService {
       );
     }
 
-    // ── 4. 인증 방식별 처리 ──────────────────────────────────────────────────
+    // ── 5. 인증 방식별 처리 ──────────────────────────────────────────────────
     let receiptVerified = false;
     let receiptHash: string | null = null;
 
@@ -487,7 +507,7 @@ export class PlaceService {
       receiptVerified = false;
     }
 
-    // ── 5. 체크인 생성 ────────────────────────────────────────────────────────
+    // ── 6. 체크인 생성 ────────────────────────────────────────────────────────
     return this.prisma.checkIn.create({
       data: { userId, placeId, mood, note, receiptVerified, receiptHash },
     });
