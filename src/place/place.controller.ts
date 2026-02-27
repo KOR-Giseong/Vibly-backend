@@ -23,7 +23,6 @@ export class PlaceController {
     @Query('radius') radius?: string,
     @Query('page') page?: string,
   ) {
-    console.log(`[nearby] lat=${lat} lng=${lng} radius=${radius}`);
     return this.placeService.getNearby(+lat, +lng, +(radius ?? 3000), +(page ?? 1));
   }
 
