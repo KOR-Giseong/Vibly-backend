@@ -7,4 +7,8 @@ export class SocialLoginDto {
   @IsOptional()
   @IsString()
   redirectUri?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
 }

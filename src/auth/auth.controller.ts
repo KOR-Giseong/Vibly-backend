@@ -45,7 +45,7 @@ export class AuthController {
   @Post('apple')
   @Throttle({ auth: {} })
   appleLogin(@Body() dto: SocialLoginDto) {
-    return this.authService.appleLogin(dto.idToken);
+    return this.authService.appleLogin(dto.idToken, dto.name);
   }
 
   // ── Token ──────────────────────────────────────────────────────────────────
@@ -85,6 +85,7 @@ export class AuthController {
     return this.authService.updateProfile(req.user.id, {
       name: dto.name,
       nickname: dto.nickname,
+      gender: dto.gender,
       preferredVibes: dto.preferredVibes,
     });
   }
@@ -94,6 +95,14 @@ export class AuthController {
   @ApiBearerAuth()
   updateAvatar(@Req() req: any, @Body() body: { base64: string }) {
     return this.authService.updateAvatar(req.user.id, body.base64);
+  }
+
+  @Delete('avatar')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(200)
+  resetAvatar(@Req() req: any) {
+    return this.authService.resetAvatar(req.user.id);
   }
 
   @Get('stats')

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -28,6 +28,15 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException('이미 사용 중인 이메일이에요.');
 
+    // 30일 재가입 제한 확인
+    const deleted = await this.prisma.deletedAccount.findFirst({
+      where: { email, canRejoinAt: { gt: new Date() } },
+    });
+    if (deleted) {
+      const days = Math.ceil((deleted.canRejoinAt.getTime() - Date.now()) / 86400000);
+      throw new ConflictException(`탈퇴 후 30일간 재가입이 제한돼요. ${days}일 후에 다시 시도해 주세요.`);
+    }
+
     const hash = await bcrypt.hash(password, 12);
     const user = await this.prisma.user.create({
       data: { email, name, provider: AuthProvider.EMAIL, passwordHash: hash },
@@ -37,9 +46,9 @@ export class AuthService {
 
   async emailLogin(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || !user.passwordHash) throw new UnauthorizedException('이메일 또는 비밀번호가 맞지 않아요.');
+    if (!user || !user.passwordHash) throw new NotFoundException('등록되지 않은 이메일이에요.');
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) throw new UnauthorizedException('이메일 또는 비밀번호가 맞지 않아요.');
+    if (!valid) throw new UnauthorizedException('비밀번호가 맞지 않아요.');
     return this.issueTokens(user.id);
   }
 
@@ -104,10 +113,10 @@ export class AuthService {
 
   // ── Apple Auth ─────────────────────────────────────────────────────────────
 
-  async appleLogin(idToken: string) {
+  async appleLogin(idToken: string, name?: string) {
     try {
       const { sub, email } = await this.verifyAppleToken(idToken);
-      return this.upsertSocialUser(AuthProvider.APPLE, sub, email ?? null, 'Apple 사용자');
+      return this.upsertSocialUser(AuthProvider.APPLE, sub, email ?? null, name?.trim() || 'Apple 사용자');
     } catch {
       throw new BadRequestException('Apple 로그인에 실패했어요.');
     }
@@ -149,8 +158,35 @@ export class AuthService {
     email: string | null,
     name: string,
   ) {
+    // 1. 동일 소셜 계정 조회
     let user = await this.prisma.user.findFirst({ where: { provider, providerId } });
+
     if (!user) {
+      // 30일 재가입 제한 확인 (providerId 기준)
+      const deletedByProvider = await this.prisma.deletedAccount.findFirst({
+        where: { provider, providerId, canRejoinAt: { gt: new Date() } },
+      });
+      if (deletedByProvider) {
+        const days = Math.ceil((deletedByProvider.canRejoinAt.getTime() - Date.now()) / 86400000);
+        throw new ConflictException(`탈퇴 후 30일간 재가입이 제한돼요. ${days}일 후에 다시 시도해 주세요.`);
+      }
+
+      // 이메일이 있으면 다른 provider로 이미 가입된 계정인지 확인
+      if (email) {
+        const existing = await this.prisma.user.findFirst({ where: { email } });
+        if (existing) {
+          const PROVIDER_LABEL: Record<string, string> = {
+            EMAIL: '이메일',
+            GOOGLE: '구글',
+            KAKAO: '카카오',
+            APPLE: '애플',
+          };
+          const usedProvider = PROVIDER_LABEL[existing.provider] ?? existing.provider;
+          throw new ConflictException(
+            `이미 ${usedProvider}로 가입된 이메일이에요. ${usedProvider} 로그인을 이용해 주세요.`,
+          );
+        }
+      }
       user = await this.prisma.user.create({
         data: { provider, providerId, email, name },
       });
@@ -191,18 +227,24 @@ export class AuthService {
   }
 
   async deleteAccount(userId: string) {
-    await this.prisma.user.update({
-      where: { id: userId },
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('사용자를 찾을 수 없어요.');
+
+    const canRejoinAt = new Date();
+    canRejoinAt.setDate(canRejoinAt.getDate() + 30);
+
+    // 탈퇴 기록 저장 (30일 재가입 제한용)
+    await this.prisma.deletedAccount.create({
       data: {
-        status: 'DELETED',
-        deletedAt: new Date(),
-        email: null,
-        nickname: null,
-        name: '탈퇴한 사용자',
-        avatarUrl: null,
+        provider: user.provider,
+        providerId: user.providerId,
+        email: user.email,
+        canRejoinAt,
       },
     });
-    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+
+    // 연관 데이터 모두 CASCADE 삭제
+    await this.prisma.user.delete({ where: { id: userId } });
     return { success: true };
   }
 
@@ -225,6 +267,7 @@ export class AuthService {
         name: true,
         nickname: true,
         avatarUrl: true,
+        gender: true,
         preferredVibes: true,
         isProfileComplete: true,
         status: true,
@@ -251,7 +294,7 @@ export class AuthService {
     return { available: !existing };
   }
 
-  async updateProfile(userId: string, data: { name?: string; nickname?: string; preferredVibes?: string[] }) {
+  async updateProfile(userId: string, data: { name?: string; nickname?: string; gender?: string; preferredVibes?: string[] }) {
     if (data.nickname) {
       const taken = await this.prisma.user.findFirst({
         where: { nickname: data.nickname, NOT: { id: userId } },
@@ -263,11 +306,12 @@ export class AuthService {
       data: {
         ...(data.name && { name: data.name }),
         ...(data.nickname !== undefined && { nickname: data.nickname }),
+        ...(data.gender !== undefined && { gender: data.gender }),
         ...(data.preferredVibes !== undefined && { preferredVibes: data.preferredVibes }),
         isProfileComplete: true,
       },
       select: {
-        id: true, email: true, name: true, nickname: true,
+        id: true, email: true, name: true, nickname: true, gender: true,
         avatarUrl: true, preferredVibes: true, isProfileComplete: true,
         status: true, createdAt: true,
       },
@@ -299,6 +343,18 @@ export class AuthService {
 
     await this.prisma.user.update({ where: { id: userId }, data: { avatarUrl } });
     return { avatarUrl };
+  }
+
+  async resetAvatar(userId: string): Promise<{ success: boolean }> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    if (user?.avatarUrl?.includes('/public/avatars/')) {
+      const oldFile = path.join(process.cwd(), 'public', 'avatars', path.basename(user.avatarUrl));
+      fs.unlink(oldFile).catch(() => {});
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { avatarUrl: null } });
+    return { success: true };
   }
 
   // ── 사용자 통계 ─────────────────────────────────────────────────────────────

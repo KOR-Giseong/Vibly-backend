@@ -67,6 +67,7 @@ model User {
   name              String
   nickname          String?    @unique
   avatarUrl         String?
+  gender            String?    // 'MALE' | 'FEMALE' | 'OTHER'
   preferredVibes    String[]
   isProfileComplete Boolean    @default(false)
   provider          AuthProvider
@@ -90,6 +91,10 @@ model User {
   events          UserEvent[]
   vibeReports     VibeReport[]
   supportTickets  SupportTicket[]
+  posts           Post[]
+  postComments    PostComment[]
+  postLikes       PostLike[]
+  postReports     PostReport[]
 
   @@index([email])
 }
@@ -372,4 +377,115 @@ model VibeReport {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, period])
+}
+
+// ─── Deleted Account Cooldown ─────────────────────────────────────────────────
+
+model DeletedAccount {
+  id         String       @id @default(uuid())
+  provider   AuthProvider
+  providerId String?
+  email      String?
+  deletedAt  DateTime     @default(now())
+  canRejoinAt DateTime    // deletedAt + 30일
+
+  @@index([email])
+  @@index([provider, providerId])
+}
+
+// ─── Community ────────────────────────────────────────────────────────────────
+
+enum PostCategory {
+  FREE      // 자유게시판
+  INFO      // 정보공유
+  QUESTION  // 질문/도움
+  REVIEW    // 장소후기
+}
+
+model Post {
+  id        String       @id @default(uuid())
+  userId    String
+  category  PostCategory @default(FREE)
+  title     String
+  body      String
+  imageUrl  String?
+  isPinned  Boolean      @default(false)
+  isHidden  Boolean      @default(false)
+  viewCount Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments PostComment[]
+  likes    PostLike[]
+  reports  PostReport[]
+
+  @@index([category])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model PostComment {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  body      String
+  isHidden  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+}
+
+model PostLike {
+  id     String @id @default(uuid())
+  postId String
+  userId String
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+// ─── PostReport ───────────────────────────────────────────────────────────────
+
+enum ReportReason {
+  SPAM        // 스팸/광고
+  ABUSE       // 욕설/혐오
+  ILLEGAL     // 불법 정보
+  ADULT       // 성인/음란물
+  PRIVACY     // 개인정보 침해
+  OTHER       // 기타
+}
+
+model PostReport {
+  id        String       @id @default(uuid())
+  postId    String
+  userId    String
+  reason    ReportReason @default(OTHER)
+  detail    String?
+  isResolved Boolean     @default(false)
+  createdAt DateTime     @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([isResolved])
+}
+
+// ─── Notice ───────────────────────────────────────────────────────────────────
+
+model Notice {
+  id        String   @id @default(uuid())
+  title     String
+  body      String
+  isPinned  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

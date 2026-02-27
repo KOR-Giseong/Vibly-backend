@@ -11,6 +11,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(helmet());
+  // JSON body size 제한 확대 (아바타 base64 이미지 업로드)
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ limit: '10mb', extended: true }));
   // 아바타 이미지 static 서빙
   app.use('/public', express.static(path.join(process.cwd(), 'public')));
 

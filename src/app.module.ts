@@ -8,6 +8,7 @@ import { PlaceModule } from './place/place.module';
 import { MoodModule } from './mood/mood.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SupportModule } from './support/support.module';
+import { CommunityModule } from './community/community.module';
 
 @Module({
   imports: [
@@ -22,9 +23,11 @@ import { SupportModule } from './support/support.module';
     MoodModule,
     AnalyticsModule,
     SupportModule,
+    CommunityModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // Rate Limiting 전역 적용
   ],
 })
 export class AppModule {}
+
