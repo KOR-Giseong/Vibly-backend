@@ -97,7 +97,7 @@ export class PlaceService {
   }
 
   // ── 장소 상세 ──────────────────────────────────────────────────────────────
-  async getById(id: string, userId?: string, hint?: { name: string; lat: number; lng: number }) {
+  async getById(id: string, userId?: string, hint?: { name: string; lat: number; lng: number }, mood?: string, vibes?: string[]) {
     if (id.startsWith('kakao_')) {
       await this.upsertKakaoPlace(id, undefined, hint);
     }
@@ -141,7 +141,12 @@ export class PlaceService {
           ? Math.round((place.rating / 5) * 75 + 20)
           : 72;
 
-    const vibeTags = this.generateVibeTags(place.category as string);
+    const categoryVibes = this.generateVibeTags(place.category as string);
+    const vibeTags = mood
+      ? this.personalizeByMood(mood, categoryVibes)
+      : (vibes && vibes.length > 0)
+        ? this.personalizeByVibes(vibes, categoryVibes)
+        : categoryVibes;
     const autoDescription =
       place.description ?? this.generateDescription(place.name, place.category as string);
 
@@ -749,6 +754,29 @@ export class PlaceService {
       ETC: 75,
     };
     return scores[category] ?? 75;
+  }
+
+  // ── Private: 무드 기반 바이브 태그 개인화 ────────────────────────────────
+  private personalizeByMood(mood: string, categoryVibes: string[]): string[] {
+    const moodMap: Record<string, string[]> = {
+      '행복해요':  ['즐거운', '활기찬', '분위기 좋은', '따뜻한'],
+      '평온해요':  ['조용한', '아늑한', '평화로운', '차분한'],
+      '신나요':    ['활기찬', '신나는', '에너지 넘치는', '흥겨운'],
+      '우울해요':  ['아늑한', '따뜻한', '위로가 되는', '조용한'],
+      '생각중':    ['사색적인', '조용한', '지적인', '차분한'],
+      '열정적':    ['영감을 주는', '활기찬', '도전적인', '에너지 넘치는'],
+    };
+    const moodVibes = moodMap[mood] ?? [];
+    // 무드 태그를 앞에, 카테고리 태그(중복 제거)를 뒤에 합쳐 최대 4개 반환
+    const merged = [...moodVibes, ...categoryVibes.filter(v => !moodVibes.includes(v))];
+    return merged.slice(0, 4);
+  }
+
+  // ── Private: 선호 바이브 기반 태그 개인화 ────────────────────────────────
+  private personalizeByVibes(preferredVibes: string[], categoryVibes: string[]): string[] {
+    // 선호 바이브를 앞에, 카테고리 태그(중복 제거)를 뒤에 합쳐 최대 4개 반환
+    const merged = [...preferredVibes, ...categoryVibes.filter(v => !preferredVibes.includes(v))];
+    return merged.slice(0, 4);
   }
 
   // ── Private: 카테고리 기반 바이브 태그 생성 (2~5개) ──────────────────────

@@ -61,11 +61,14 @@ export class PlaceController {
     @Query('name') name?: string,
     @Query('lat') lat?: string,
     @Query('lng') lng?: string,
+    @Query('mood') mood?: string,
+    @Query('vibes') vibes?: string,
   ) {
     const hint = name && lat && lng
       ? { name, lat: +lat, lng: +lng }
       : undefined;
-    return this.placeService.getById(id, req.user?.id, hint);
+    const vibesArray = vibes ? vibes.split(',').filter(Boolean) : undefined;
+    return this.placeService.getById(id, req.user?.id, hint, mood, vibesArray);
   }
 
   @Post(':id/bookmark')
