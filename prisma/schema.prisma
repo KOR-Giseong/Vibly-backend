@@ -223,6 +223,7 @@ model CheckIn {
   note             String?
   imageUrl         String?
   receiptVerified  Boolean  @default(false)
+  receiptHash      String?  // SHA256 of receipt image (영수증 재사용 방지)
   createdAt        DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -230,6 +231,7 @@ model CheckIn {
 
   @@index([userId])
   @@index([placeId])
+  @@index([receiptHash])
 }
 
 model Review {

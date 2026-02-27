@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KakaoService } from './kakao.service';
 import { GooglePlacesService } from './google-places.service';
@@ -357,19 +358,60 @@ export class PlaceService {
     lat?: number,
     lng?: number,
   ) {
-    // 1. 카카오 장소 DB upsert (카카오 ID인 경우 → 좌표 확보 위해 먼저 실행)
+    // ── 1. 카카오 장소 DB upsert ────────────────────────────────────────────
     if (placeId.startsWith('kakao_')) {
       await this.upsertKakaoPlace(placeId);
     }
 
-    // 2. 장소 정보 조회
+    // ── 2. 장소 정보 조회 ────────────────────────────────────────────────────
     const place = await this.prisma.place.findUnique({ where: { id: placeId } });
     if (!place) throw new NotFoundException('장소를 찾을 수 없습니다.');
 
+    // ── 3. 악용 방지 공통 체크 ───────────────────────────────────────────────
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // 3-1. 하루 최대 10회 체크인
+    const todayTotal = await this.prisma.checkIn.count({
+      where: { userId, createdAt: { gte: todayStart, lte: todayEnd } },
+    });
+    if (todayTotal >= 10) {
+      throw new BadRequestException(
+        '오늘은 더 이상 체크인할 수 없어요. 하루 최대 10회까지 가능해요.',
+      );
+    }
+
+    // 3-2. 같은 장소 하루 1회 제한
+    const alreadyToday = await this.prisma.checkIn.count({
+      where: { userId, placeId, createdAt: { gte: todayStart, lte: todayEnd } },
+    });
+    if (alreadyToday > 0) {
+      throw new BadRequestException(
+        `${place.name}은(는) 오늘 이미 체크인했어요. 내일 다시 방문해주세요.`,
+      );
+    }
+
+    // ── 4. 인증 방식별 처리 ──────────────────────────────────────────────────
     let receiptVerified = false;
+    let receiptHash: string | null = null;
 
     if (receiptBuffer && receiptBuffer.length > 0) {
-      // ── 영수증 OCR 방식 ──────────────────────────────────────────────────────
+      // ── 4-A. 영수증 OCR 방식 ─────────────────────────────────────────────
+
+      // 4-A-1. 영수증 해시 중복 검사 (동일 이미지 재사용 방지)
+      receiptHash = createHash('sha256').update(receiptBuffer).digest('hex');
+      const duplicateReceipt = await this.prisma.checkIn.findFirst({
+        where: { receiptHash },
+      });
+      if (duplicateReceipt) {
+        throw new BadRequestException(
+          '이미 사용된 영수증이에요. 같은 영수증으로 중복 체크인은 불가해요.',
+        );
+      }
+
+      // 4-A-2. OCR 텍스트 추출
       let lines: string[];
       try {
         lines = await this.ocr.extractLines(receiptBuffer);
@@ -386,6 +428,7 @@ export class PlaceService {
         );
       }
 
+      // 4-A-3. 매장명 퍼지 매칭
       const { matched, confidence, extractedName } =
         this.receiptMatcher.matchStoreName(lines, place.name);
 
@@ -400,20 +443,18 @@ export class PlaceService {
       }
       receiptVerified = true;
     } else {
-      // ── GPS 방식 (영수증 없는 경우) ──────────────────────────────────────────
+      // ── 4-B. GPS 방식 ─────────────────────────────────────────────────────
       if (lat == null || lng == null) {
-        throw new BadRequestException(
-          '영수증 또는 현재 위치 정보가 필요해요.',
-        );
+        throw new BadRequestException('영수증 또는 현재 위치 정보가 필요해요.');
       }
 
-      // 장소 좌표가 DB에 없으면 GPS 검증 불가
       if (!place.lat || !place.lng) {
         throw new UnprocessableEntityException(
           '이 장소는 좌표 정보가 없어 GPS 체크인이 불가해요. 영수증으로 체크인해주세요.',
         );
       }
 
+      // 4-B-1. 거리 검증
       const distanceM = this.haversineDistance(lat, lng, place.lat, place.lng);
       this.logger.log(
         `[GPS검증] place=${place.name} | placeLat=${place.lat} placeLng=${place.lng} | userLat=${lat} userLng=${lng} | distance=${Math.round(distanceM)}m`,
@@ -424,11 +465,31 @@ export class PlaceService {
           `현재 위치가 ${place.name}에서 너무 멀어요. (${Math.round(distanceM)}m 떨어짐, 100m 이내 필요)`,
         );
       }
-      receiptVerified = false; // GPS 체크인은 미인증
+
+      // 4-B-2. GPS 쿨다운: 같은 장소 GPS 체크인 2시간 이내 재시도 방지
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const recentGpsCheckIn = await this.prisma.checkIn.findFirst({
+        where: {
+          userId,
+          placeId,
+          receiptVerified: false,
+          createdAt: { gte: twoHoursAgo },
+        },
+      });
+      if (recentGpsCheckIn) {
+        const nextAvailable = new Date(recentGpsCheckIn.createdAt.getTime() + 2 * 60 * 60 * 1000);
+        const remainMin = Math.ceil((nextAvailable.getTime() - Date.now()) / 60000);
+        throw new BadRequestException(
+          `GPS 체크인은 같은 장소에서 2시간에 1번만 가능해요. ${remainMin}분 후 다시 시도해주세요.`,
+        );
+      }
+
+      receiptVerified = false;
     }
 
+    // ── 5. 체크인 생성 ────────────────────────────────────────────────────────
     return this.prisma.checkIn.create({
-      data: { userId, placeId, mood, note, receiptVerified },
+      data: { userId, placeId, mood, note, receiptVerified, receiptHash },
     });
   }
 
