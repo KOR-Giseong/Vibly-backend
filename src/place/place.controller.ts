@@ -1,5 +1,10 @@
-import { Controller, Get, Post, Param, Query, Body, UseGuards, Req } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller, Get, Post, Param, Query, Body,
+  UseGuards, Req, UseInterceptors, UploadedFile,
+  ParseFilePipe, MaxFileSizeValidator, FileTypeValidator,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { PlaceService } from './place.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -73,8 +78,33 @@ export class PlaceController {
   @Post(':id/checkin')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  checkIn(@Req() req: any, @Param('id') id: string, @Body() body: CheckInDto) {
-    return this.placeService.checkIn(req.user.id, id, body.mood, body.note, body.imageUrl);
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('receipt'))
+  async checkIn(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: CheckInDto,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new FileTypeValidator({ fileType: /^image\/(jpeg|jpg|png|webp|heic)$/ }),
+        ],
+        errorHttpStatusCode: 422,
+        fileIsRequired: false, // 영수증 선택사항
+      }),
+    )
+    receipt?: Express.Multer.File,
+  ) {
+    return this.placeService.checkInWithReceipt(
+      req.user.id,
+      id,
+      receipt?.buffer ?? null,
+      body.mood,
+      body.note,
+      body.lat,
+      body.lng,
+    );
   }
 
   @Get(':id/reviews')

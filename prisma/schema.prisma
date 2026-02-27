@@ -216,13 +216,14 @@ model PlaceImage {
 // ─── CheckIn & Review ────────────────────────────────────────────────────────
 
 model CheckIn {
-  id        String   @id @default(uuid())
-  userId    String
-  placeId   String
-  mood      String
-  note      String?
-  imageUrl  String?
-  createdAt DateTime @default(now())
+  id               String   @id @default(uuid())
+  userId           String
+  placeId          String
+  mood             String
+  note             String?
+  imageUrl         String?
+  receiptVerified  Boolean  @default(false)
+  createdAt        DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)

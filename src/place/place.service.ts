@@ -1,10 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnprocessableEntityException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { KakaoService } from './kakao.service';
 import { GooglePlacesService } from './google-places.service';
 import { PlaceCategory as PrismaPlaceCategory } from '@prisma/client';
 import type { Place } from './types/kakao.types';
+import { OcrService } from '../ocr/ocr.service';
+import { ReceiptMatcherService } from '../ocr/receipt-matcher.service';
 
 // 카테고리별 폴백 이미지 (카카오 검색 결과와 동일하게 Unsplash 고정 사진)
 const CATEGORY_IMAGE: Record<string, string> = {
@@ -32,6 +34,8 @@ export class PlaceService {
     private kakao: KakaoService,
     private googlePlaces: GooglePlacesService,
     private config: ConfigService,
+    private ocr: OcrService,
+    private receiptMatcher: ReceiptMatcherService,
   ) {}
 
   // ── 주변 장소 (카카오에서 바로 호출, DB 저장 없이 반환) ──────────────────
@@ -343,7 +347,103 @@ export class PlaceService {
     return { reviews, total, page, hasNext: skip + reviews.length < total };
   }
 
-  // ── 체크인 ─────────────────────────────────────────────────────────────────
+  // ── 체크인 (영수증 OCR 필수) ───────────────────────────────────────────────
+  async checkInWithReceipt(
+    userId: string,
+    placeId: string,
+    receiptBuffer: Buffer | null,
+    mood: string,
+    note?: string,
+    lat?: number,
+    lng?: number,
+  ) {
+    // 1. 카카오 장소 DB upsert (카카오 ID인 경우 → 좌표 확보 위해 먼저 실행)
+    if (placeId.startsWith('kakao_')) {
+      await this.upsertKakaoPlace(placeId);
+    }
+
+    // 2. 장소 정보 조회
+    const place = await this.prisma.place.findUnique({ where: { id: placeId } });
+    if (!place) throw new NotFoundException('장소를 찾을 수 없습니다.');
+
+    let receiptVerified = false;
+
+    if (receiptBuffer && receiptBuffer.length > 0) {
+      // ── 영수증 OCR 방식 ──────────────────────────────────────────────────────
+      let lines: string[];
+      try {
+        lines = await this.ocr.extractLines(receiptBuffer);
+      } catch (err) {
+        this.logger.error('OCR 처리 실패', err);
+        throw new UnprocessableEntityException(
+          'OCR 처리 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.',
+        );
+      }
+
+      if (!lines.length) {
+        throw new UnprocessableEntityException(
+          '영수증에서 텍스트를 인식할 수 없어요. 선명하게 다시 찍어주세요.',
+        );
+      }
+
+      const { matched, confidence, extractedName } =
+        this.receiptMatcher.matchStoreName(lines, place.name);
+
+      this.logger.log(
+        `[영수증검증] place=${place.name} | extracted=${extractedName} | confidence=${confidence} | matched=${matched}`,
+      );
+
+      if (!matched) {
+        throw new UnprocessableEntityException(
+          `영수증 매장명이 일치하지 않아요. 인식된 매장: "${extractedName ?? '없음'}"`,
+        );
+      }
+      receiptVerified = true;
+    } else {
+      // ── GPS 방식 (영수증 없는 경우) ──────────────────────────────────────────
+      if (lat == null || lng == null) {
+        throw new BadRequestException(
+          '영수증 또는 현재 위치 정보가 필요해요.',
+        );
+      }
+
+      // 장소 좌표가 DB에 없으면 GPS 검증 불가
+      if (!place.lat || !place.lng) {
+        throw new UnprocessableEntityException(
+          '이 장소는 좌표 정보가 없어 GPS 체크인이 불가해요. 영수증으로 체크인해주세요.',
+        );
+      }
+
+      const distanceM = this.haversineDistance(lat, lng, place.lat, place.lng);
+      this.logger.log(
+        `[GPS검증] place=${place.name} | placeLat=${place.lat} placeLng=${place.lng} | userLat=${lat} userLng=${lng} | distance=${Math.round(distanceM)}m`,
+      );
+
+      if (distanceM > 100) {
+        throw new UnprocessableEntityException(
+          `현재 위치가 ${place.name}에서 너무 멀어요. (${Math.round(distanceM)}m 떨어짐, 100m 이내 필요)`,
+        );
+      }
+      receiptVerified = false; // GPS 체크인은 미인증
+    }
+
+    return this.prisma.checkIn.create({
+      data: { userId, placeId, mood, note, receiptVerified },
+    });
+  }
+
+  /** Haversine 공식: 두 좌표 간 거리(미터) */
+  private haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000; // 지구 반지름 (미터)
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // ── 체크인 (레거시 - 내부 호환용, 외부 노출 X) ─────────────────────────────
   async checkIn(
     userId: string,
     placeId: string,

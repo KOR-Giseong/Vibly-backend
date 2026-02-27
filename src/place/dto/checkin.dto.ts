@@ -1,4 +1,5 @@
-import { IsString, IsOptional, MaxLength, IsUrl } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsNumber } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CheckInDto {
   @IsString()
@@ -11,6 +12,12 @@ export class CheckInDto {
   note?: string;
 
   @IsOptional()
-  @IsUrl({}, { message: '올바른 이미지 URL이 아니에요.' })
-  imageUrl?: string;
+  @Type(() => Number)
+  @IsNumber()
+  lat?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lng?: number;
 }
