@@ -499,9 +499,16 @@ ${partnerBookmarkText}
         },
       );
       const raw = await response.json();
-      const text = raw.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { analysis: text, recommendations: [] };
+      if (!raw.candidates?.length) {
+        // API 오류 (키 문제, 할당량 초과 등) → fallback으로 처리
+        throw new Error(raw.error?.message ?? 'Gemini API no candidates');
+      }
+      const text = raw.candidates[0]?.content?.parts?.[0]?.text ?? '';
+      // 마크다운 코드펜스 제거 후 JSON 추출
+      const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      if (!parsed?.analysis) throw new Error('Gemini returned no analysis');
       return { ...parsed, creditsRemaining };
     } catch {
       return {
