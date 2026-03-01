@@ -452,12 +452,13 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 300, responseMimeType: 'application/json' },
           }),
         },
       );
       const raw = await res.json();
-      const text = raw.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      const parts1 = raw.candidates?.[0]?.content?.parts ?? [];
+      const text = (parts1.find((p: any) => !p.thought && p.text) ?? parts1[0])?.text ?? '';
       const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
       const m = cleaned.match(/\{[\s\S]*\}/);
       if (m) {
@@ -618,13 +619,15 @@ ${userNote ? `[커플 요청사항]\n${userNote}\n` : ''}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.6, maxOutputTokens: 1500 },
+            generationConfig: { temperature: 0.6, maxOutputTokens: 1500, responseMimeType: 'application/json' },
           }),
         },
       );
       const raw = await response.json();
       if (!raw.candidates?.length) throw new Error(raw.error?.message ?? 'Gemini API no candidates');
-      const text = raw.candidates[0]?.content?.parts?.[0]?.text ?? '';
+      const parts2 = raw.candidates[0]?.content?.parts ?? [];
+      const text = (parts2.find((p: any) => !p.thought && p.text) ?? parts2[0])?.text ?? '';
+      this.logger.log(`[AI날짜] Gemini 2차 응답 텍스트(앞100): ${text.slice(0, 100)}`);
       const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
@@ -707,13 +710,14 @@ ${placesListText}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.6, maxOutputTokens: 1200 },
+            generationConfig: { temperature: 0.6, maxOutputTokens: 1200, responseMimeType: 'application/json' },
           }),
         },
       );
       const raw = await response.json();
       if (!raw.candidates?.length) throw new Error(raw.error?.message ?? 'Gemini API no candidates');
-      const text = raw.candidates[0]?.content?.parts?.[0]?.text ?? '';
+      const parts3 = raw.candidates[0]?.content?.parts ?? [];
+      const text = (parts3.find((p: any) => !p.thought && p.text) ?? parts3[0])?.text ?? '';
       const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
