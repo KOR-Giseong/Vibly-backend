@@ -430,11 +430,16 @@ export class CoupleService {
 
     const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
 
-    const [completedPlans, myBookmarks, partnerBookmarks] = await Promise.all([
+    const [completedPlans, plannedPlans, myBookmarks, partnerBookmarks] = await Promise.all([
       this.prisma.datePlan.findMany({
         where: { coupleId: couple.id, status: 'COMPLETED' },
         orderBy: { dateAt: 'desc' },
         take: 10,
+      }),
+      this.prisma.datePlan.findMany({
+        where: { coupleId: couple.id, status: 'PLANNED' },
+        orderBy: { dateAt: 'asc' },
+        take: 5,
       }),
       this.prisma.bookmark.findMany({
         where: { userId },
@@ -454,6 +459,10 @@ export class CoupleService {
       ? '아직 완료된 데이트 기록이 없습니다.'
       : completedPlans.map(p => `- ${p.title} (${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
 
+    const plannedPlansText = plannedPlans.length === 0
+      ? '없음'
+      : plannedPlans.map(p => `- ${p.title} (예정: ${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
+
     const myBookmarkText = myBookmarks.length === 0
       ? '없음'
       : myBookmarks.map(b => `- ${b.place.name} (${b.place.category ?? '기타'}, ${b.place.address ?? ''})`).join('\n');
@@ -462,11 +471,14 @@ export class CoupleService {
       ? '없음'
       : partnerBookmarks.map(b => `- ${b.place.name} (${b.place.category ?? '기타'}, ${b.place.address ?? ''})`).join('\n');
 
-    const prompt = `당신은 커플의 데이트 코디네이터입니다.
-아래 정보를 참고해서 이 커플에게 최적의 데이트를 추천해 주세요.
+    const prompt = `당신은 커플 전용 하루 데이트 플래너입니다.
+아래 정보를 참고해서 이 커플에게 완벽한 하루 데이트 일정을 시간대별로 짜주세요.
 
 [완료된 데이트 기록]
 ${plansText}
+
+[예정된 데이트 플랜]
+${plannedPlansText}
 
 [내가 북마크한 장소]
 ${myBookmarkText}
@@ -474,14 +486,16 @@ ${myBookmarkText}
 [파트너가 북마크한 장소]
 ${partnerBookmarkText}
 
-북마크된 장소들을 우선적으로 활용하고, 두 사람 모두가 관심 있어 할 만한 데이트를 추천해 주세요.
+북마크된 장소와 예정 플랜을 우선 활용하고, 오전부터 저녁까지 이동 흐름이 자연스러운 하루 일정으로 구성해주세요.
 다음 JSON 형식으로만 응답하세요 (추가 텍스트 없이):
 {
-  "analysis": "커플의 데이트 패턴과 관심사 분석 요약 (2-3문장, 한국어)",
-  "recommendations": [
-    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유 (북마크 장소 언급 포함 가능)" },
-    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유 (북마크 장소 언급 포함 가능)" },
-    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유 (북마크 장소 언급 포함 가능)" }
+  "analysis": "커플의 데이트 취향과 관심사 분석 요약 (2-3문장, 한국어)",
+  "timeline": [
+    { "time": "11:00", "emoji": "☕", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
+    { "time": "13:00", "emoji": "🍜", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
+    { "time": "15:00", "emoji": "🎨", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
+    { "time": "18:00", "emoji": "🌅", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
+    { "time": "20:00", "emoji": "🍷", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" }
   ]
 }`;
 
@@ -513,11 +527,13 @@ ${partnerBookmarkText}
     } catch {
       return {
         creditsRemaining,
-        analysis: '데이트 기록이 쌓일수록 더 정확한 분석이 가능해요. 멋진 데이트를 기록해보세요!',
-        recommendations: [
-          { type: '카페', activity: '브런치 데이트', reason: '가볍게 이야기 나누기 좋아요' },
-          { type: '공원', activity: '산책 & 피크닉', reason: '자연 속에서 여유로운 시간을 보내보세요' },
-          { type: '문화공간', activity: '전시회 관람', reason: '새로운 경험을 함께 나눠보세요' },
+        analysis: '데이트 기록이 쌓일수록 더 정확한 분석이 가능해요. 북마크와 플랜을 채워갈수록 더 맞춤 일정을 드릴게요!',
+        timeline: [
+          { time: '11:00', emoji: '☕', place: '감성 카페', activity: '브런치 카페 데이트', tip: '가볍게 이야기 나누며 하루를 시작해요' },
+          { time: '13:00', emoji: '🍜', place: '맛집', activity: '점심 식사', tip: '두 사람이 좋아하는 음식을 찾아가봐요' },
+          { time: '15:00', emoji: '🎨', place: '전시관 / 문화공간', activity: '문화 활동', tip: '새로운 경험을 함께 나눠요' },
+          { time: '18:00', emoji: '🌅', place: '공원 / 강변', activity: '저녁 산책', tip: '노을을 보며 여유로운 시간을 보내요' },
+          { time: '20:00', emoji: '🍷', place: '루프탑 / 분위기 좋은 식당', activity: '저녁 식사', tip: '하루를 마무리하는 특별한 저녁' },
         ],
       };
     }
