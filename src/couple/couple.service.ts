@@ -432,15 +432,78 @@ export class CoupleService {
     context: string,
     userNote?: string,
   ): Promise<{ region: string; keywords: string[] }> {
-    const prompt = `아래 커플 정보와 요청사항을 분석해서 카카오 장소 검색에 최적화된 키워드를 추출하세요.
+    // ── userNote에서 지역명을 코드 레벨로 먼저 추출 ──────────────────────────
+    // Gemini에게 맡기면 북마크(context)에 끌려가므로, 명시적 지역명은 직접 감지
+    const REGION_PATTERNS: [RegExp, string][] = [
+      [/서울숲/,           '서울숲'],
+      [/성수동?/,          '성수동'],
+      [/한남동?/,          '한남동'],
+      [/이태원/,           '이태원'],
+      [/홍대|홍익대/,      '홍대'],
+      [/합정/,             '합정'],
+      [/강남역?/,          '강남'],
+      [/신사동?|가로수길/, '가로수길'],
+      [/압구정/,           '압구정'],
+      [/청담/,             '청담'],
+      [/여의도/,           '여의도'],
+      [/한강공원|반포/,    '반포한강공원'],
+      [/망원/,             '망원동'],
+      [/마포/,             '마포'],
+      [/종로|인사동/,      '인사동'],
+      [/북촌|삼청동/,      '북촌'],
+      [/연남동?/,          '연남동'],
+      [/을지로/,           '을지로'],
+      [/익선동/,           '익선동'],
+      [/뚝섬/,             '뚝섬'],
+      [/건대입구?|건대/,   '건대입구'],
+      [/신촌/,             '신촌'],
+      [/노원/,             '노원'],
+      [/판교/,             '판교'],
+      [/수원/,             '수원'],
+      [/분당/,             '분당'],
+      [/부천/,             '부천'],
+      [/인천/,             '인천'],
+    ];
 
-[커플 컨텍스트]
+    let forcedRegion: string | null = null;
+    if (userNote) {
+      for (const [pattern, name] of REGION_PATTERNS) {
+        if (pattern.test(userNote)) {
+          forcedRegion = name;
+          break;
+        }
+      }
+    }
+
+    // 지역이 코드 레벨에서 확정됐으면 Gemini는 키워드 추출만 담당
+    const prompt = forcedRegion
+      ? `아래 커플 정보와 요청사항을 분석해서 카카오 장소 검색에 최적화된 키워드를 추출하세요.
+
+[요청사항 — 최우선 반영]
+${userNote}
+
+[커플 컨텍스트 — 취향 파악용]
 ${context}
 
-${userNote ? `[요청사항]\n${userNote}\n` : ''}
+지역은 반드시 "${forcedRegion}"으로 고정하세요.
 다음 JSON만 반환 (다른 텍스트·마크다운 없이):
 {
-  "region": "구체적인 지역명 (예: 홍대, 강남, 성수동, 이태원, 여의도) — 컨텍스트에 지역 정보가 없으면 '홍대'",
+  "region": "${forcedRegion}",
+  "keywords": ["장소 유형 4~5개 (각 항목은 유형 한 단어, 예: '브런치 카페', '이탈리안 레스토랑', '전시회', '한강공원', '루프탑 바') — 요청사항의 분위기를 우선 반영"]
+}`
+      : `아래 커플 정보와 요청사항을 분석해서 카카오 장소 검색에 최적화된 키워드를 추출하세요.
+
+${userNote ? `[요청사항 — 최우선 반영]\n${userNote}\n\n` : ''}[커플 컨텍스트 — 취향 파악용]
+${context}
+
+[중요 규칙]
+- 요청사항에 지역명이 있으면 반드시 그 지역을 region으로 사용하세요 (컨텍스트 무시)
+- 요청사항에 지역이 없으면 컨텍스트의 주요 방문 지역을 사용하세요
+- 지역 정보가 전혀 없으면 '홍대'를 기본값으로 사용하세요
+
+다음 JSON만 반환 (다른 텍스트·마크다운 없이):
+{
+  "region": "구체적인 지역명 (예: 홍대, 강남, 성수동, 이태원, 여의도, 서울숲)",
   "keywords": ["장소 유형 4~5개 (각 항목은 '유형' 한 단어, 예: '브런치 카페', '이탈리안 레스토랑', '전시회', '한강공원', '루프탑 바')"]
 }`;
     try {
@@ -459,20 +522,19 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
       const raw = await res.json();
       const parts1 = raw.candidates?.[0]?.content?.parts ?? [];
       const text = (parts1.find((p: any) => !p.thought && p.text) ?? parts1[0])?.text ?? '';
-      const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
-      const m = cleaned.match(/\{[\s\S]*\}/);
-      if (m) {
-        const parsed = JSON.parse(m[0]);
-        if (parsed.region && Array.isArray(parsed.keywords) && parsed.keywords.length > 0) {
-          this.logger.log(`[AI날짜] 키워드 추출 성공 → 지역: ${parsed.region}, 키워드: ${parsed.keywords.join(', ')}`);
-          return { region: parsed.region, keywords: parsed.keywords.slice(0, 5) };
-        }
+      this.logger.log(`[AI날짜] 키워드 추출 응답(앞80): ${text.slice(0, 80)}`);
+      const parsed = JSON.parse(text);
+      if (parsed.region && Array.isArray(parsed.keywords) && parsed.keywords.length > 0) {
+        // forcedRegion이 있으면 Gemini 응답 region을 무시하고 강제 고정
+        const finalRegion = forcedRegion ?? parsed.region;
+        this.logger.log(`[AI날짜] 키워드 추출 성공 → 지역: ${finalRegion}${forcedRegion ? ' (강제지정)' : ''}, 키워드: ${parsed.keywords.join(', ')}`);
+        return { region: finalRegion, keywords: parsed.keywords.slice(0, 5) };
       }
-      this.logger.warn('[AI날짜] 키워드 추출 JSON 파싱 실패, fallback 사용');
+      this.logger.warn('[AI날짜] 키워드 추출 필드 누락, fallback 사용');
     } catch (e) {
       this.logger.error('[AI날짜] extractDateKeywords 에러:', e?.message);
     }
-    return { region: '홍대', keywords: ['브런치 카페', '레스토랑', '전시', '공원', '루프탑 바'] };
+    return { region: forcedRegion ?? '홍대', keywords: ['브런치 카페', '레스토랑', '전시', '공원', '루프탑 바'] };
   }
 
   // ── 16-0b. 내부 헬퍼: 카카오 실장소 검색 ──────────────────────────────────────
@@ -572,7 +634,7 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
     // ④ Gemini 2차: 실제 장소 기반 타임라인 구성
     const prompt = `당신은 커플 전용 하루 데이트 플래너입니다.
 아래 카카오로 검색한 실제 장소들을 최대한 활용해서 자연스러운 하루 코스를 만들어주세요.
-
+${userNote ? `\n[커플 요청사항 — 최우선 반영]\n${userNote}\n` : ''}
 [지역] ${region}
 
 [카카오 실제 장소 후보]
@@ -584,14 +646,14 @@ ${plansText}
 [예정된 플랜]
 ${plannedPlansText}
 
-[내 북마크]
+[내 북마크 — 취향 참고용]
 ${myBookmarkText}
 
-[파트너 북마크]
+[파트너 북마크 — 취향 참고용]
 ${partnerBookmarkText}
 
-${userNote ? `[커플 요청사항]\n${userNote}\n` : ''}
 [규칙]
+- 요청사항에 지역이나 분위기가 명시된 경우 반드시 최우선으로 반영하세요
 - 타임라인 5개 항목 중 최소 4개는 위 실제 장소 후보에서 선택하세요
 - place 필드에 실제 장소명을 그대로, address 필드에 실제 주소, kakaoId에 [ ] 안의 ID를 넣으세요
 - 실제 장소가 부족한 경우에만 place에 장소 유형을 쓰고 address·kakaoId는 null로 하세요
@@ -619,7 +681,7 @@ ${userNote ? `[커플 요청사항]\n${userNote}\n` : ''}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.6, maxOutputTokens: 1500, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.6, maxOutputTokens: 4096, responseMimeType: 'application/json' },
           }),
         },
       );
@@ -627,10 +689,7 @@ ${userNote ? `[커플 요청사항]\n${userNote}\n` : ''}
       if (!raw.candidates?.length) throw new Error(raw.error?.message ?? 'Gemini API no candidates');
       const parts2 = raw.candidates[0]?.content?.parts ?? [];
       const text = (parts2.find((p: any) => !p.thought && p.text) ?? parts2[0])?.text ?? '';
-      this.logger.log(`[AI날짜] Gemini 2차 응답 텍스트(앞100): ${text.slice(0, 100)}`);
-      const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      const parsed = JSON.parse(text);
       if (!parsed?.analysis) throw new Error('Gemini returned no analysis');
       this.logger.log(`[AI날짜] Gemini 타임라인 생성 완료 → ${parsed.timeline?.length}개 항목, 실장소 포함: ${parsed.timeline?.filter((t: any) => t.kakaoId).length}개`);
       return { ...parsed, creditsRemaining };
@@ -710,7 +769,7 @@ ${placesListText}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.6, maxOutputTokens: 1200, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.6, maxOutputTokens: 3072, responseMimeType: 'application/json' },
           }),
         },
       );
@@ -718,9 +777,7 @@ ${placesListText}
       if (!raw.candidates?.length) throw new Error(raw.error?.message ?? 'Gemini API no candidates');
       const parts3 = raw.candidates[0]?.content?.parts ?? [];
       const text = (parts3.find((p: any) => !p.thought && p.text) ?? parts3[0])?.text ?? '';
-      const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      const parsed = JSON.parse(text);
       if (!parsed?.timeline) throw new Error('Gemini returned no timeline');
       return { ...parsed, creditsRemaining };
     } catch {
