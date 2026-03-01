@@ -7,15 +7,16 @@ import { PlaceService } from './place.service';
 import { KakaoService } from './kakao.service';
 import { GooglePlacesService } from './google-places.service';
 import { OcrModule } from '../ocr/ocr.module';
+import { CreditModule } from '../credit/credit.module';
 
 @Module({
   imports: [
     HttpModule,
     OcrModule,
-    // 영수증 이미지는 메모리에서만 처리 (디스크 저장 없음)
+    CreditModule,
     MulterModule.register({
       storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 }, // 최대 10MB
+      limits: { fileSize: 10 * 1024 * 1024 },
     }),
   ],
   controllers: [PlaceController],

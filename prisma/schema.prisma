@@ -51,12 +51,50 @@ enum EventType {
   SUBSCRIPTION
 }
 
+enum CreditTxType {
+  SIGNUP_BONUS       // +100 가입 보너스
+  MOOD_SEARCH_BASIC  // -5  빠른 검색 (quick match)
+  MOOD_SEARCH_AI     // -10 AI 분석 검색 (Gemini)
+  CHECKIN_GPS        // +15 GPS 체크인 보상
+  CHECKIN_RECEIPT    // +20 영수증 체크인 보상
+  AD_WATCH           // +15 광고 시청 보상
+  ADMIN_GRANT        // 관리자 지급
+  COUPLE_DATE_AI     // -15 커플 AI 데이트 분석
+  COUPLE_CREDIT_SEND // 파트너에게 크레딧 전송
+}
+
 enum NotificationType {
   RECOMMEND
   LIKE
   NEARBY
   PROMO
   REPORT
+  COUPLE_INVITE
+  COUPLE_ACCEPT
+}
+
+enum CoupleStatus {
+  ACTIVE
+  DISSOLVED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  EMOJI
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum DatePlanStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
 }
 
 // ─── User ────────────────────────────────────────────────────────────────────
@@ -78,23 +116,32 @@ model User {
   suspendedUntil    DateTime?
   suspendReason     String?
   deletedAt         DateTime?
+  credits           Int        @default(100)  // 가입 시 100 크레딧 지급
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
-  devices         Device[]
-  sessions        RefreshToken[]
-  bookmarks       Bookmark[]
-  checkIns        CheckIn[]
-  reviews         Review[]
-  notifications   Notification[]
-  subscriptions   Subscription[]
-  events          UserEvent[]
-  vibeReports     VibeReport[]
-  supportTickets  SupportTicket[]
-  posts           Post[]
-  postComments    PostComment[]
-  postLikes       PostLike[]
-  postReports     PostReport[]
+  devices            Device[]
+  sessions           RefreshToken[]
+  bookmarks          Bookmark[]
+  checkIns           CheckIn[]
+  reviews            Review[]
+  notifications      Notification[]
+  subscriptions      Subscription[]
+  events             UserEvent[]
+  vibeReports        VibeReport[]
+  supportTickets     SupportTicket[]
+  posts              Post[]
+  postComments       PostComment[]
+  postLikes          PostLike[]
+  postReports        PostReport[]
+  creditTransactions  CreditTransaction[]
+  adWatchLogs         AdWatchLog[]
+  couplesAsUser1      Couple[]            @relation("CoupleUser1")
+  couplesAsUser2      Couple[]            @relation("CoupleUser2")
+  sentInvitations     CoupleInvitation[]  @relation("SentInvitations")
+  receivedInvitations CoupleInvitation[]  @relation("ReceivedInvitations")
+  sentUserReports     UserReport[]        @relation("SentUserReports")
+  receivedUserReports UserReport[]        @relation("ReceivedUserReports")
 
   @@index([email])
 }
@@ -292,6 +339,33 @@ model PromptTemplate {
   updatedAt DateTime @updatedAt
 }
 
+// ─── Credit System ───────────────────────────────────────────────────────────
+
+model CreditTransaction {
+  id          String        @id @default(uuid())
+  userId      String
+  amount      Int           // 양수=획득, 음수=소모
+  type        CreditTxType
+  referenceId String?       // 관련 체크인 ID 등
+  createdAt   DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model AdWatchLog {
+  id        String   @id @default(uuid())
+  userId    String
+  date      String   // YYYY-MM-DD (KST 기준 날짜)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
 // ─── Subscription & Monetization ─────────────────────────────────────────────
 
 model Subscription {
@@ -459,6 +533,7 @@ model PostLike {
 enum ReportReason {
   SPAM        // 스팸/광고
   ABUSE       // 욕설/혐오
+  HARASSMENT  // 성희롱/괴롭힘
   ILLEGAL     // 불법 정보
   ADULT       // 성인/음란물
   PRIVACY     // 개인정보 침해
@@ -480,6 +555,112 @@ model PostReport {
   @@unique([postId, userId])
   @@index([postId])
   @@index([isResolved])
+}
+
+// ─── UserReport ───────────────────────────────────────────────────────────────
+
+model UserReport {
+  id         String       @id @default(uuid())
+  reporterId String
+  reportedId String
+  reason     ReportReason @default(OTHER)
+  detail     String?
+  isResolved Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+
+  reporter User @relation("SentUserReports",     fields: [reporterId], references: [id], onDelete: Cascade)
+  reported User @relation("ReceivedUserReports",  fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@index([reportedId])
+  @@index([reporterId])
+  @@index([isResolved])
+}
+
+// ─── Couple Lounge ────────────────────────────────────────────────────────────
+
+model Couple {
+  id                 String       @id @default(uuid())
+  user1Id            String       @unique
+  user2Id            String       @unique
+  status             CoupleStatus @default(ACTIVE)
+  creditShareEnabled Boolean      @default(false)
+  anniversaryDate    DateTime?
+  dissolvedAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  user1     User            @relation("CoupleUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2     User            @relation("CoupleUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  datePlans DatePlan[]
+  memories  CoupleMemory[]
+  messages  CoupleMessage[]
+
+  @@index([status])
+}
+
+model CoupleInvitation {
+  id          String           @id @default(uuid())
+  senderId    String
+  receiverId  String
+  status      InvitationStatus @default(PENDING)
+  message     String?
+  respondedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  sender   User @relation("SentInvitations",     fields: [senderId],   references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedInvitations", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+  @@index([senderId])
+}
+
+model DatePlan {
+  id        String         @id @default(uuid())
+  coupleId  String
+  title     String
+  dateAt    DateTime
+  memo      String?
+  status    DatePlanStatus @default(PLANNED)
+  placeIds  String[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId])
+  @@index([coupleId, dateAt])
+}
+
+model CoupleMemory {
+  id         String    @id @default(uuid())
+  coupleId   String
+  uploaderId String
+  imageUrl   String
+  caption    String?
+  takenAt    DateTime?
+  createdAt  DateTime  @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId])
+  @@index([coupleId, createdAt])
+}
+
+model CoupleMessage {
+  id        String      @id @default(uuid())
+  coupleId  String
+  senderId  String
+  type      MessageType @default(TEXT)
+  text      String?
+  imageUrl  String?
+  emoji     String?
+  readAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, createdAt])
 }
 
 // ─── Notice ───────────────────────────────────────────────────────────────────

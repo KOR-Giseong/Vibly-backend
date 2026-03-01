@@ -8,6 +8,7 @@ import { PlaceCategory as PrismaPlaceCategory } from '@prisma/client';
 import type { Place } from './types/kakao.types';
 import { OcrService } from '../ocr/ocr.service';
 import { ReceiptMatcherService } from '../ocr/receipt-matcher.service';
+import { CreditService, CREDIT_REWARDS, CreditTxType } from '../credit/credit.service';
 
 // 카테고리별 폴백 이미지 (카카오 검색 결과와 동일하게 Unsplash 고정 사진)
 const CATEGORY_IMAGE: Record<string, string> = {
@@ -41,20 +42,20 @@ export class PlaceService {
     private config: ConfigService,
     private ocr: OcrService,
     private receiptMatcher: ReceiptMatcherService,
+    private creditService: CreditService,
   ) {}
 
   // ── 주변 장소 (카카오에서 바로 호출, DB 저장 없이 반환) ──────────────────
-  async getNearby(lat: number, lng: number, radiusM = 3000, page = 1) {
-    const kakaoResults = await this.kakao.searchNearby(lat, lng, radiusM, page);
+  async getNearby(lat: number, lng: number, radiusM = 2000, page = 1, limit = 20) {
+    const kakaoResults = await this.kakao.searchNearby(lat, lng, radiusM, page, limit);
 
     if (kakaoResults.length > 0) {
-      // DB 저장 없이 Kakao 결과 + 기존 Vibly 평점만 병합
       const merged = await this.mergeDbRatings(kakaoResults);
-      return { data: merged, page, total: merged.length, hasNext: merged.length === 20 };
+      return { data: merged, page, total: merged.length, hasNext: merged.length >= limit };
     }
 
     this.logger.warn('카카오 결과 없음 → DB 폴백');
-    const delta = radiusM / 111000; // 미터 → 위도/경도 근사 변환
+    const delta = radiusM / 111000;
     const places = await this.prisma.place.findMany({
       where: {
         isActive: true,
@@ -63,20 +64,19 @@ export class PlaceService {
       },
       include: { images: { where: { isPrimary: true }, take: 1 }, tags: true },
       orderBy: { vibeScore: 'desc' },
-      skip: (page - 1) * 15,
-      take: 15,
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return { data: places, page, hasNext: places.length === 15 };
+    return { data: places, page, hasNext: places.length >= limit };
   }
 
   // ── 키워드 검색 (카카오에서 바로 호출, DB 저장 없이 반환) ──────────────────
-  async search(query: string, lat?: number, lng?: number, page = 1) {
-    const kakaoResults = await this.kakao.searchByKeyword(query, lat, lng, page);
+  async search(query: string, lat?: number, lng?: number, page = 1, limit = 20) {
+    const kakaoResults = await this.kakao.searchByKeyword(query, lat, lng, page, 'distance', limit);
 
     if (kakaoResults.length > 0) {
-      // DB 저장 없이 Kakao 결과 + 기존 Vibly 평점만 병합
       const merged = await this.mergeDbRatings(kakaoResults);
-      return { data: merged, page, total: merged.length, hasNext: merged.length === 15 };
+      return { data: merged, page, total: merged.length, hasNext: merged.length >= limit };
     }
 
     this.logger.warn('카카오 검색 결과 없음 → DB 폴백');
@@ -90,10 +90,10 @@ export class PlaceService {
       },
       include: { images: { where: { isPrimary: true }, take: 1 }, tags: true },
       orderBy: { vibeScore: 'desc' },
-      skip: (page - 1) * 15,
-      take: 15,
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return { data: places, page, hasNext: places.length === 15 };
+    return { data: places, page, hasNext: places.length >= limit };
   }
 
   // ── 장소 상세 ──────────────────────────────────────────────────────────────
@@ -513,9 +513,18 @@ export class PlaceService {
     }
 
     // ── 6. 체크인 생성 ────────────────────────────────────────────────────────
-    return this.prisma.checkIn.create({
+    const checkIn = await this.prisma.checkIn.create({
       data: { userId, placeId, mood, note, receiptVerified, receiptHash },
     });
+
+    // ── 7. 크레딧 보상 (비동기, 실패해도 체크인은 완료) ────────────────────
+    const rewardType = receiptVerified ? CreditTxType.CHECKIN_RECEIPT : CreditTxType.CHECKIN_GPS;
+    const rewardAmount = receiptVerified ? CREDIT_REWARDS.CHECKIN_RECEIPT : CREDIT_REWARDS.CHECKIN_GPS;
+    this.creditService.earn(userId, rewardAmount, rewardType, checkIn.id).catch((err) =>
+      this.logger.error(`체크인 크레딧 지급 실패 userId=${userId}`, err),
+    );
+
+    return { ...checkIn, creditEarned: rewardAmount };
   }
 
   /** Haversine 공식: 두 좌표 간 거리(미터) */

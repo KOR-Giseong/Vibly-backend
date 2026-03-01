@@ -5,3 +5,8 @@ dist
 
 /generated/prisma
 .DS_Store
+
+# 업로드 파일 (로컬 저장)
+public/memories/
+public/chat/
+public/avatars/

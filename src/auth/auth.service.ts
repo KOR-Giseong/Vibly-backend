@@ -8,6 +8,7 @@ import * as jwt from 'jsonwebtoken';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthProvider } from '@prisma/client';
+import { CreditService } from '../credit/credit.service';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +17,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private http: HttpService,
+    private creditService: CreditService,
   ) {
     if (!config.get<string>('JWT_REFRESH_SECRET')) {
       throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
@@ -41,6 +43,8 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: { email, name, provider: AuthProvider.EMAIL, passwordHash: hash },
     });
+    // 가입 보너스 트랜잭션 기록 (DB 기본값 100 크레딧과 별개로 로그 남김)
+    this.creditService.grantSignupBonus(user.id).catch(() => {});
     return this.issueTokens(user.id);
   }
 
@@ -190,6 +194,8 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: { provider, providerId, email, name },
       });
+      // 가입 보너스 트랜잭션 기록
+      this.creditService.grantSignupBonus(user.id).catch(() => {});
     }
     return this.issueTokens(user.id);
   }
@@ -274,6 +280,7 @@ export class AuthService {
         isAdmin: true,
         suspendedUntil: true,
         suspendReason: true,
+        credits: true,
         createdAt: true,
         subscriptions: {
           where: { expiresAt: { gt: new Date() } },
@@ -284,7 +291,36 @@ export class AuthService {
     });
     if (!user) return null;
     const { subscriptions, ...rest } = user;
-    return { ...rest, isPremium: subscriptions.length > 0 };
+
+    // 커플 정보 조회
+    const couple = await this.prisma.couple.findFirst({
+      where: { status: 'ACTIVE', OR: [{ user1Id: userId }, { user2Id: userId }] },
+      include: {
+        user1: { select: { id: true, name: true, nickname: true, avatarUrl: true } },
+        user2: { select: { id: true, name: true, nickname: true, avatarUrl: true } },
+      },
+    });
+
+    let coupleInfo: {
+      coupleId: string; partnerId: string; partnerName: string;
+      partnerAvatarUrl: string | null; creditShareEnabled: boolean;
+      anniversaryDate: Date | null; createdAt: Date;
+    } | null = null;
+    if (couple) {
+      const isUser1 = couple.user1Id === userId;
+      const partner = isUser1 ? couple.user2 : couple.user1;
+      coupleInfo = {
+        coupleId: couple.id,
+        partnerId: partner.id,
+        partnerName: partner.nickname ?? partner.name,
+        partnerAvatarUrl: partner.avatarUrl,
+        creditShareEnabled: couple.creditShareEnabled,
+        anniversaryDate: couple.anniversaryDate,
+        createdAt: couple.createdAt,
+      };
+    }
+
+    return { ...rest, isPremium: subscriptions.length > 0, couple: coupleInfo };
   }
 
   async checkNickname(nickname: string, userId: string) {

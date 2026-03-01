@@ -100,9 +100,14 @@ export class KakaoService {
     lng?: number,
     page = 1,
     sort: 'accuracy' | 'distance' = 'distance',
+    limit = 15,
   ): Promise<Place[]> {
     try {
-      const params: Record<string, unknown> = { query, page, size: 15 };
+      const params: Record<string, unknown> = {
+        query,
+        page,
+        size: Math.min(45, Math.max(1, limit)), // 카카오 keyword API 최대 45
+      };
       if (lat != null && lng != null) {
         params.x = lng;
         params.y = lat;
@@ -116,11 +121,7 @@ export class KakaoService {
         }),
       );
 
-      const places: Place[] = [];
-      for (const doc of data.documents) {
-        places.push(this.toPlace(doc));
-      }
-      return places;
+      return data.documents.slice(0, limit).map((doc) => this.toPlace(doc));
     } catch (err) {
       this.logger.error('카카오 키워드 검색 실패', err);
       return [];
@@ -131,11 +132,18 @@ export class KakaoService {
   async searchNearby(
     lat: number,
     lng: number,
-    radiusM = 3000,
+    radiusM = 2000,
     page = 1,
+    limit = 20,
   ): Promise<Place[]> {
-    // ① 카카오 카테고리 코드가 있는 장소 → category.json API
+    // 카테고리 6개 + 키워드 5개에 걸쳐 limit을 고르게 분배
     const categoryCodes = ['CE7', 'FD6', 'AT4', 'CT1', 'BK9', 'OL7'];
+    const keywords = ['볼링장', '노래방', '찜질방', '방탈출', '오락실'];
+    // 각 카테고리/키워드당 최소 1~최대 15개 (카카오 category API 제한)
+    const catSize = Math.min(15, Math.max(1, Math.ceil(limit / categoryCodes.length) + 1));
+    const kwSize  = Math.min(15, Math.max(1, Math.ceil(limit / keywords.length)));
+
+    // ① 카카오 카테고리 코드가 있는 장소 → category.json API
     const categoryResults = await Promise.allSettled(
       categoryCodes.map((code) =>
         firstValueFrom(
@@ -147,7 +155,7 @@ export class KakaoService {
               y: lat,
               radius: radiusM,
               sort: 'distance',
-              size: 5,
+              size: catSize,
               page,
             },
           }),
@@ -156,7 +164,6 @@ export class KakaoService {
     );
 
     // ② 카카오 카테고리 코드가 없는 장소 → keyword.json API (위치 기반)
-    const keywords = ['볼링장', '노래방', '찜질방', '방탈출', '오락실'];
     const keywordResults = await Promise.allSettled(
       keywords.map((query) =>
         firstValueFrom(
@@ -168,7 +175,7 @@ export class KakaoService {
               y: lat,
               radius: radiusM,
               sort: 'distance',
-              size: 3,
+              size: kwSize,
               page,
             },
           }),
@@ -176,23 +183,18 @@ export class KakaoService {
       ),
     );
 
-    // ③ 두 결과 합쳐서 인터리빙 병합
-    const sets = [
-      ...categoryResults,
-      ...keywordResults,
-    ]
-      .filter(
-        (r): r is PromiseFulfilledResult<Place[]> => r.status === 'fulfilled',
-      )
+    // ③ 두 결과 합쳐서 인터리빙 병합 (limit 개수만큼)
+    const sets = [...categoryResults, ...keywordResults]
+      .filter((r): r is PromiseFulfilledResult<Place[]> => r.status === 'fulfilled')
       .map((r) => r.value);
 
     const seen = new Set<string>();
     const merged: Place[] = [];
     const maxLen = Math.max(...sets.map((s) => s.length), 0);
 
-    for (let i = 0; i < maxLen && merged.length < 20; i++) {
+    for (let i = 0; i < maxLen && merged.length < limit; i++) {
       for (const set of sets) {
-        if (merged.length >= 20) break;
+        if (merged.length >= limit) break;
         const place = set[i];
         if (place && !seen.has(place.id)) {
           seen.add(place.id);

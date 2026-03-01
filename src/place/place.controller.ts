@@ -21,9 +21,15 @@ export class PlaceController {
     @Query('lat') lat: string,
     @Query('lng') lng: string,
     @Query('radius') radius?: string,
+    @Query('limit') limit?: string,
     @Query('page') page?: string,
   ) {
-    return this.placeService.getNearby(+lat, +lng, +(radius ?? 3000), +(page ?? 1));
+    return this.placeService.getNearby(
+      +lat, +lng,
+      +(radius ?? 2000),
+      +(page ?? 1),
+      +(limit ?? 20),
+    );
   }
 
   @Get('search')
@@ -32,10 +38,17 @@ export class PlaceController {
     @Query('q') q: string,           // 웹/직접 호출용 호환
     @Query('lat') lat?: string,
     @Query('lng') lng?: string,
+    @Query('limit') limit?: string,
     @Query('page') page?: string,
   ) {
     const keyword = query || q;
-    return this.placeService.search(keyword, lat ? +lat : undefined, lng ? +lng : undefined, +(page ?? 1));
+    return this.placeService.search(
+      keyword,
+      lat ? +lat : undefined,
+      lng ? +lng : undefined,
+      +(page ?? 1),
+      +(limit ?? 20),
+    );
   }
 
   @Get('bookmarks')

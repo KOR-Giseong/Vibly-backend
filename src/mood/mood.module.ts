@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { MoodController } from './mood.controller';
 import { MoodService } from './mood.service';
 import { PlaceModule } from '../place/place.module';
+import { CreditModule } from '../credit/credit.module';
 
 @Module({
-  imports: [PlaceModule],
+  imports: [PlaceModule, CreditModule],
   controllers: [MoodController],
   providers: [MoodService],
 })

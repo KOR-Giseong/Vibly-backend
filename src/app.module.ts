@@ -9,13 +9,15 @@ import { MoodModule } from './mood/mood.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SupportModule } from './support/support.module';
 import { CommunityModule } from './community/community.module';
+import { CreditModule } from './credit/credit.module';
+import { CoupleModule } from './couple/couple.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60_000,  limit: 120 }, // 일반: 120회/분
-      { name: 'auth',    ttl: 900_000, limit: 10  }, // 인증: 10회/15분
+      { name: 'default', ttl: 60_000,  limit: 120 },
+      { name: 'auth',    ttl: 900_000, limit: 10  },
     ]),
     PrismaModule,
     AuthModule,
@@ -24,6 +26,8 @@ import { CommunityModule } from './community/community.module';
     AnalyticsModule,
     SupportModule,
     CommunityModule,
+    CreditModule,
+    CoupleModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // Rate Limiting 전역 적용

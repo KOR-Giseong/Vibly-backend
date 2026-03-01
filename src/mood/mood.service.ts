@@ -29,33 +29,35 @@ export class MoodService {
 
     // 1. 빠른 키워드 매칭 시도 (Gemini 없이 즉시 결과)
     const quickMatch = this.tryQuickMatch(query);
+    const wasAiSearch = !quickMatch; // quick match 실패 → Gemini 호출 = AI 검색
 
     // 2. 매칭 성공 시 바로 검색, 실패 시 Gemini 분석
     const analysis = quickMatch ?? (await this.analyzeWithGemini(query));
 
-    // 2. 카카오 실제 장소 검색 (키워드별 병렬 호출)
+    // 3. 카카오 실제 장소 검색 (키워드별 병렬 호출)
     const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng);
 
-    // 3. Google Places로 사진 + 평점 보완 (API 키 없으면 자동 생략)
+    // 4. Google Places로 사진 + 평점 보완 (API 키 없으면 자동 생략)
     const enrichedResults = await this.googlePlaces.enrichPlaces(kakaoResults);
 
-    // 4. DB 앱 리뷰 평점만 병합 (저장은 상세보기/북마크/체크인 시에만)
+    // 5. DB 앱 리뷰 평점만 병합 (저장은 상세보기/북마크/체크인 시에만)
     const mergedResults = await this.placeService.mergeDbRatings(enrichedResults);
 
-    // 5. 기분 관련성 점수로 정렬 — 키워드 매칭도가 높은 장소를 상위에
+    // 6. 기분 관련성 점수로 정렬 — 키워드 매칭도가 높은 장소를 상위에
     const rankedResults = this.rankByMoodRelevance(mergedResults, analysis.keywords);
 
-    // 6. 검색 로그 비동기 저장 (결과를 기다리지 않음)
+    // 7. 검색 로그 비동기 저장 (결과를 기다리지 않음)
     this.saveMoodSearchLog(query, analysis.summary, userId).catch(
       (err) => this.logger.error('검색 로그 저장 실패', err),
     );
 
     return {
-      summary:  analysis.summary,
-      places:   rankedResults,
-      keywords: analysis.keywords,
+      summary:    analysis.summary,
+      places:     rankedResults,
+      keywords:   analysis.keywords,
       query,
-      fallback: false,
+      wasAiSearch, // 컨트롤러에서 크레딧 차감 판단용
+      fallback:   false,
     };
   }
 
