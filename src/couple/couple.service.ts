@@ -428,27 +428,60 @@ export class CoupleService {
 
     await this.creditService.spend(userId, COUPLE_DATE_AI_COST, 'COUPLE_DATE_AI' as any, couple.id);
 
-    const completedPlans = await this.prisma.datePlan.findMany({
-      where: { coupleId: couple.id, status: 'COMPLETED' },
-      orderBy: { dateAt: 'desc' },
-      take: 10,
-    });
+    const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
+
+    const [completedPlans, myBookmarks, partnerBookmarks] = await Promise.all([
+      this.prisma.datePlan.findMany({
+        where: { coupleId: couple.id, status: 'COMPLETED' },
+        orderBy: { dateAt: 'desc' },
+        take: 10,
+      }),
+      this.prisma.bookmark.findMany({
+        where: { userId },
+        include: { place: { select: { name: true, category: true, address: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      this.prisma.bookmark.findMany({
+        where: { userId: partnerId },
+        include: { place: { select: { name: true, category: true, address: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
 
     const plansText = completedPlans.length === 0
       ? '아직 완료된 데이트 기록이 없습니다.'
       : completedPlans.map(p => `- ${p.title} (${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
 
+    const myBookmarkText = myBookmarks.length === 0
+      ? '없음'
+      : myBookmarks.map(b => `- ${b.place.name} (${b.place.category ?? '기타'}, ${b.place.address ?? ''})`).join('\n');
+
+    const partnerBookmarkText = partnerBookmarks.length === 0
+      ? '없음'
+      : partnerBookmarks.map(b => `- ${b.place.name} (${b.place.category ?? '기타'}, ${b.place.address ?? ''})`).join('\n');
+
     const prompt = `당신은 커플의 데이트 코디네이터입니다.
-아래는 이 커플의 최근 데이트 기록입니다:
+아래 정보를 참고해서 이 커플에게 최적의 데이트를 추천해 주세요.
+
+[완료된 데이트 기록]
 ${plansText}
 
+[내가 북마크한 장소]
+${myBookmarkText}
+
+[파트너가 북마크한 장소]
+${partnerBookmarkText}
+
+북마크된 장소들을 우선적으로 활용하고, 두 사람 모두가 관심 있어 할 만한 데이트를 추천해 주세요.
 다음 JSON 형식으로만 응답하세요 (추가 텍스트 없이):
 {
-  "analysis": "데이트 패턴 분석 요약 (2-3문장, 한국어)",
+  "analysis": "커플의 데이트 패턴과 관심사 분석 요약 (2-3문장, 한국어)",
   "recommendations": [
-    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유" },
-    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유" },
-    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유" }
+    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유 (북마크 장소 언급 포함 가능)" },
+    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유 (북마크 장소 언급 포함 가능)" },
+    { "type": "장소 유형", "activity": "추천 활동", "reason": "추천 이유 (북마크 장소 언급 포함 가능)" }
   ]
 }`;
 
