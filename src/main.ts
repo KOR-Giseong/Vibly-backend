@@ -40,8 +40,17 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
 
-  await app.listen(process.env.PORT ?? 3000);
-  console.log(`🚀 Vibly API running on port ${process.env.PORT ?? 3000}`);
+  const port = Number(process.env.PORT ?? 3000);
+  try {
+    await app.listen(port);
+  } catch (err: any) {
+    if (err?.code === 'EADDRINUSE') {
+      console.warn(`⚠️  Port ${port} in use, 1.5s 후 재시도...`);
+      await new Promise(r => setTimeout(r, 1500));
+      await app.listen(port);
+    } else throw err;
+  }
+  console.log(`🚀 Vibly API running on port ${port}`);
 }
 bootstrap();
 

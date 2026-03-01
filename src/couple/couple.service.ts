@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -14,6 +15,8 @@ const COUPLE_DATE_AI_REFINE_COST = 2;
 
 @Injectable()
 export class CoupleService {
+  private readonly logger = new Logger(CoupleService.name);
+
   constructor(
     private prisma: PrismaService,
     private creditService: CreditService,
@@ -460,10 +463,14 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
       if (m) {
         const parsed = JSON.parse(m[0]);
         if (parsed.region && Array.isArray(parsed.keywords) && parsed.keywords.length > 0) {
+          this.logger.log(`[AI날짜] 키워드 추출 성공 → 지역: ${parsed.region}, 키워드: ${parsed.keywords.join(', ')}`);
           return { region: parsed.region, keywords: parsed.keywords.slice(0, 5) };
         }
       }
-    } catch { /* fallback below */ }
+      this.logger.warn('[AI날짜] 키워드 추출 JSON 파싱 실패, fallback 사용');
+    } catch (e) {
+      this.logger.error('[AI날짜] extractDateKeywords 에러:', e?.message);
+    }
     return { region: '홍대', keywords: ['브런치 카페', '레스토랑', '전시', '공원', '루프탑 바'] };
   }
 
@@ -481,7 +488,10 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
     const seen = new Set<string>();
     const merged: Array<{ id: string; name: string; address: string; category: string }> = [];
     for (const r of resultSets) {
-      if (r.status !== 'fulfilled') continue;
+      if (r.status !== 'fulfilled') {
+        this.logger.warn('[AI날짜] 카카오 검색 일부 실패:', (r as PromiseRejectedResult).reason?.message);
+        continue;
+      }
       for (const p of r.value) {
         if (!seen.has(p.id)) {
           seen.add(p.id);
@@ -489,6 +499,7 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
         }
       }
     }
+    this.logger.log(`[AI날짜] 카카오 실장소 검색 결과: ${merged.length}개 → ${merged.map(p => p.name).join(', ')}`);
     return merged;
   }
 
@@ -546,9 +557,11 @@ ${userNote ? `[요청사항]\n${userNote}\n` : ''}
 
     // ① Gemini 1차: 지역 + 장소 키워드 추출
     const { region, keywords } = await this.extractDateKeywords(context, userNote);
+    this.logger.log(`[AI날짜] 지역: ${region}, 키워드: ${keywords.join(', ')}`);
 
     // ② 카카오로 실제 장소 검색 (키워드별 병렬)
     const realPlaces = await this.searchKakaoForDate(region, keywords, 3);
+    this.logger.log(`[AI날짜] 실장소 ${realPlaces.length}개 확보`);
 
     // ③ 실제 장소 목록 텍스트 구성
     const placesListText = realPlaces.length === 0
@@ -616,8 +629,10 @@ ${userNote ? `[커플 요청사항]\n${userNote}\n` : ''}
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
       if (!parsed?.analysis) throw new Error('Gemini returned no analysis');
+      this.logger.log(`[AI날짜] Gemini 타임라인 생성 완료 → ${parsed.timeline?.length}개 항목, 실장소 포함: ${parsed.timeline?.filter((t: any) => t.kakaoId).length}개`);
       return { ...parsed, creditsRemaining };
-    } catch {
+    } catch (e) {
+      this.logger.error('[AI날짜] Gemini 2차 호출 실패:', e?.message);
       return {
         creditsRemaining,
         analysis: '데이트 기록이 쌓일수록 더 정확한 분석이 가능해요. 북마크와 플랜을 채워갈수록 더 맞춤 일정을 드릴게요!',
