@@ -426,7 +426,7 @@ export class CoupleService {
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
-    await this.creditService.spend(userId, COUPLE_DATE_AI_COST, 'COUPLE_DATE_AI' as any, couple.id);
+    const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_COST, 'COUPLE_DATE_AI' as any, couple.id);
 
     const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
 
@@ -501,9 +501,11 @@ ${partnerBookmarkText}
       const raw = await response.json();
       const text = raw.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : { analysis: text, recommendations: [] };
+      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { analysis: text, recommendations: [] };
+      return { ...parsed, creditsRemaining };
     } catch {
       return {
+        creditsRemaining,
         analysis: '데이트 기록이 쌓일수록 더 정확한 분석이 가능해요. 멋진 데이트를 기록해보세요!',
         recommendations: [
           { type: '카페', activity: '브런치 데이트', reason: '가볍게 이야기 나누기 좋아요' },
