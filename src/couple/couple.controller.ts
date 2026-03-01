@@ -142,8 +142,13 @@ export class CoupleController {
 
   // ── AI 데이트 분석 ───────────────────────────────────────────────────────────
   @Post('date-plans/ai-analysis')
-  aiDateAnalysis(@Req() req: any) {
-    return this.coupleService.aiDateAnalysis(req.user.id);
+  aiDateAnalysis(@Req() req: any, @Body() body: { userNote?: string }) {
+    return this.coupleService.aiDateAnalysis(req.user.id, body?.userNote);
+  }
+
+  @Post('date-plans/ai-refine')
+  aiRefineTimeline(@Req() req: any, @Body() body: { timeline: any[]; feedback: string }) {
+    return this.coupleService.aiRefineTimeline(req.user.id, body.timeline, body.feedback);
   }
 
   // ── 추억 사진 ────────────────────────────────────────────────────────────────

@@ -7,14 +7,17 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditService } from '../credit/credit.service';
+import { KakaoService } from '../place/kakao.service';
 
 const COUPLE_DATE_AI_COST = 15;
+const COUPLE_DATE_AI_REFINE_COST = 2;
 
 @Injectable()
 export class CoupleService {
   constructor(
     private prisma: PrismaService,
     private creditService: CreditService,
+    private kakao: KakaoService,
   ) {}
 
   // ── 내부 헬퍼: 내 현재 활성 커플 조회 ──────────────────────────────────────
@@ -421,8 +424,76 @@ export class CoupleService {
     return { success: true };
   }
 
+  // ── 16-0. 내부 헬퍼: Gemini로 지역 + 장소 키워드 추출 ──────────────────────────
+  private async extractDateKeywords(
+    context: string,
+    userNote?: string,
+  ): Promise<{ region: string; keywords: string[] }> {
+    const prompt = `아래 커플 정보와 요청사항을 분석해서 카카오 장소 검색에 최적화된 키워드를 추출하세요.
+
+[커플 컨텍스트]
+${context}
+
+${userNote ? `[요청사항]\n${userNote}\n` : ''}
+다음 JSON만 반환 (다른 텍스트·마크다운 없이):
+{
+  "region": "구체적인 지역명 (예: 홍대, 강남, 성수동, 이태원, 여의도) — 컨텍스트에 지역 정보가 없으면 '홍대'",
+  "keywords": ["장소 유형 4~5개 (각 항목은 '유형' 한 단어, 예: '브런치 카페', '이탈리안 레스토랑', '전시회', '한강공원', '루프탑 바')"]
+}`;
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
+          }),
+        },
+      );
+      const raw = await res.json();
+      const text = raw.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
+      const m = cleaned.match(/\{[\s\S]*\}/);
+      if (m) {
+        const parsed = JSON.parse(m[0]);
+        if (parsed.region && Array.isArray(parsed.keywords) && parsed.keywords.length > 0) {
+          return { region: parsed.region, keywords: parsed.keywords.slice(0, 5) };
+        }
+      }
+    } catch { /* fallback below */ }
+    return { region: '홍대', keywords: ['브런치 카페', '레스토랑', '전시', '공원', '루프탑 바'] };
+  }
+
+  // ── 16-0b. 내부 헬퍼: 카카오 실장소 검색 ──────────────────────────────────────
+  private async searchKakaoForDate(
+    region: string,
+    keywords: string[],
+    limitPerKeyword = 3,
+  ): Promise<Array<{ id: string; name: string; address: string; category: string }>> {
+    const resultSets = await Promise.allSettled(
+      keywords.map((kw) =>
+        this.kakao.searchByKeyword(`${region} ${kw}`, undefined, undefined, 1, 'accuracy', limitPerKeyword),
+      ),
+    );
+    const seen = new Set<string>();
+    const merged: Array<{ id: string; name: string; address: string; category: string }> = [];
+    for (const r of resultSets) {
+      if (r.status !== 'fulfilled') continue;
+      for (const p of r.value) {
+        if (!seen.has(p.id)) {
+          seen.add(p.id);
+          merged.push({ id: p.id, name: p.name, address: p.address, category: p.categoryLabel ?? p.category });
+        }
+      }
+    }
+    return merged;
+  }
+
   // ── 16. AI 데이트 분석 (15크레딧) ────────────────────────────────────────────
-  async aiDateAnalysis(userId: string) {
+  async aiDateAnalysis(userId: string, userNote?: string) {
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
@@ -459,10 +530,6 @@ export class CoupleService {
       ? '아직 완료된 데이트 기록이 없습니다.'
       : completedPlans.map(p => `- ${p.title} (${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
 
-    const plannedPlansText = plannedPlans.length === 0
-      ? '없음'
-      : plannedPlans.map(p => `- ${p.title} (예정: ${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
-
     const myBookmarkText = myBookmarks.length === 0
       ? '없음'
       : myBookmarks.map(b => `- ${b.place.name} (${b.place.category ?? '기타'}, ${b.place.address ?? ''})`).join('\n');
@@ -471,31 +538,61 @@ export class CoupleService {
       ? '없음'
       : partnerBookmarks.map(b => `- ${b.place.name} (${b.place.category ?? '기타'}, ${b.place.address ?? ''})`).join('\n');
 
-    const prompt = `당신은 커플 전용 하루 데이트 플래너입니다.
-아래 정보를 참고해서 이 커플에게 완벽한 하루 데이트 일정을 시간대별로 짜주세요.
+    const plannedPlansText = plannedPlans.length === 0
+      ? '없음'
+      : plannedPlans.map(p => `- ${p.title} (예정: ${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
 
-[완료된 데이트 기록]
+    const context = `완료된 데이트: ${plansText}\n내 북마크: ${myBookmarkText}\n파트너 북마크: ${partnerBookmarkText}`;
+
+    // ① Gemini 1차: 지역 + 장소 키워드 추출
+    const { region, keywords } = await this.extractDateKeywords(context, userNote);
+
+    // ② 카카오로 실제 장소 검색 (키워드별 병렬)
+    const realPlaces = await this.searchKakaoForDate(region, keywords, 3);
+
+    // ③ 실제 장소 목록 텍스트 구성
+    const placesListText = realPlaces.length === 0
+      ? '검색된 실제 장소가 없습니다. 장소 유형으로 대체해주세요.'
+      : realPlaces.map((p, i) => `${i + 1}. [${p.id}] ${p.name} | ${p.address} | ${p.category}`).join('\n');
+
+    // ④ Gemini 2차: 실제 장소 기반 타임라인 구성
+    const prompt = `당신은 커플 전용 하루 데이트 플래너입니다.
+아래 카카오로 검색한 실제 장소들을 최대한 활용해서 자연스러운 하루 코스를 만들어주세요.
+
+[지역] ${region}
+
+[카카오 실제 장소 후보]
+${placesListText}
+
+[커플 데이트 기록]
 ${plansText}
 
-[예정된 데이트 플랜]
+[예정된 플랜]
 ${plannedPlansText}
 
-[내가 북마크한 장소]
+[내 북마크]
 ${myBookmarkText}
 
-[파트너가 북마크한 장소]
+[파트너 북마크]
 ${partnerBookmarkText}
 
-북마크된 장소와 예정 플랜을 우선 활용하고, 오전부터 저녁까지 이동 흐름이 자연스러운 하루 일정으로 구성해주세요.
+${userNote ? `[커플 요청사항]\n${userNote}\n` : ''}
+[규칙]
+- 타임라인 5개 항목 중 최소 4개는 위 실제 장소 후보에서 선택하세요
+- place 필드에 실제 장소명을 그대로, address 필드에 실제 주소, kakaoId에 [ ] 안의 ID를 넣으세요
+- 실제 장소가 부족한 경우에만 place에 장소 유형을 쓰고 address·kakaoId는 null로 하세요
+- 동선이 자연스럽도록 가까운 장소끼리 묶어 배치하세요 (오전→점심→오후→저녁→야간)
+
 다음 JSON 형식으로만 응답하세요 (추가 텍스트 없이):
 {
-  "analysis": "커플의 데이트 취향과 관심사 분석 요약 (2-3문장, 한국어)",
+  "analysis": "커플 취향 분석 및 이번 코스 추천 이유 (2-3문장, 한국어)",
+  "region": "${region}",
   "timeline": [
-    { "time": "11:00", "emoji": "☕", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
-    { "time": "13:00", "emoji": "🍜", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
-    { "time": "15:00", "emoji": "🎨", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
-    { "time": "18:00", "emoji": "🌅", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" },
-    { "time": "20:00", "emoji": "🍷", "place": "장소명 또는 장소 유형", "activity": "활동 설명", "tip": "한 줄 추천 팁" }
+    { "time": "11:00", "emoji": "☕", "place": "실제 장소명", "address": "실제 주소", "kakaoId": "카카오ID", "activity": "활동 설명", "tip": "한 줄 팁" },
+    { "time": "13:00", "emoji": "🍜", "place": "실제 장소명", "address": "실제 주소", "kakaoId": "카카오ID", "activity": "활동 설명", "tip": "한 줄 팁" },
+    { "time": "15:00", "emoji": "🎨", "place": "실제 장소명", "address": "실제 주소", "kakaoId": "카카오ID", "activity": "활동 설명", "tip": "한 줄 팁" },
+    { "time": "18:00", "emoji": "🌅", "place": "실제 장소명", "address": "실제 주소", "kakaoId": "카카오ID", "activity": "활동 설명", "tip": "한 줄 팁" },
+    { "time": "20:00", "emoji": "🍷", "place": "실제 장소명", "address": "실제 주소", "kakaoId": "카카오ID", "activity": "활동 설명", "tip": "한 줄 팁" }
   ]
 }`;
 
@@ -508,17 +605,13 @@ ${partnerBookmarkText}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+            generationConfig: { temperature: 0.6, maxOutputTokens: 1500 },
           }),
         },
       );
       const raw = await response.json();
-      if (!raw.candidates?.length) {
-        // API 오류 (키 문제, 할당량 초과 등) → fallback으로 처리
-        throw new Error(raw.error?.message ?? 'Gemini API no candidates');
-      }
+      if (!raw.candidates?.length) throw new Error(raw.error?.message ?? 'Gemini API no candidates');
       const text = raw.candidates[0]?.content?.parts?.[0]?.text ?? '';
-      // 마크다운 코드펜스 제거 후 JSON 추출
       const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
@@ -528,14 +621,91 @@ ${partnerBookmarkText}
       return {
         creditsRemaining,
         analysis: '데이트 기록이 쌓일수록 더 정확한 분석이 가능해요. 북마크와 플랜을 채워갈수록 더 맞춤 일정을 드릴게요!',
+        region,
         timeline: [
-          { time: '11:00', emoji: '☕', place: '감성 카페', activity: '브런치 카페 데이트', tip: '가볍게 이야기 나누며 하루를 시작해요' },
-          { time: '13:00', emoji: '🍜', place: '맛집', activity: '점심 식사', tip: '두 사람이 좋아하는 음식을 찾아가봐요' },
-          { time: '15:00', emoji: '🎨', place: '전시관 / 문화공간', activity: '문화 활동', tip: '새로운 경험을 함께 나눠요' },
-          { time: '18:00', emoji: '🌅', place: '공원 / 강변', activity: '저녁 산책', tip: '노을을 보며 여유로운 시간을 보내요' },
-          { time: '20:00', emoji: '🍷', place: '루프탑 / 분위기 좋은 식당', activity: '저녁 식사', tip: '하루를 마무리하는 특별한 저녁' },
+          { time: '11:00', emoji: '☕', place: '감성 카페', address: null, kakaoId: null, activity: '브런치 카페 데이트', tip: '가볍게 이야기 나누며 하루를 시작해요' },
+          { time: '13:00', emoji: '🍜', place: '맛집', address: null, kakaoId: null, activity: '점심 식사', tip: '두 사람이 좋아하는 음식을 찾아가봐요' },
+          { time: '15:00', emoji: '🎨', place: '전시관 / 문화공간', address: null, kakaoId: null, activity: '문화 활동', tip: '새로운 경험을 함께 나눠요' },
+          { time: '18:00', emoji: '🌅', place: '공원 / 강변', address: null, kakaoId: null, activity: '저녁 산책', tip: '노을을 보며 여유로운 시간을 보내요' },
+          { time: '20:00', emoji: '🍷', place: '루프탑 / 분위기 좋은 식당', address: null, kakaoId: null, activity: '저녁 식사', tip: '하루를 마무리하는 특별한 저녁' },
         ],
       };
+    }
+  }
+
+  // ── 16-2. AI 타임라인 수정 (2크레딧) ──────────────────────────────────────────
+  async aiRefineTimeline(userId: string, timeline: any[], feedback: string) {
+    const couple = await this.findMyCouple(userId);
+    if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
+
+    const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_REFINE_COST, 'COUPLE_DATE_AI' as any, couple.id);
+
+    // 기존 타임라인에서 지역 추출 (주소 있는 항목 우선)
+    const regionFromTimeline = timeline
+      .map(t => t.address)
+      .filter(Boolean)
+      .map((addr: string) => addr.split(' ').slice(1, 3).join(' '))
+      .find(Boolean) ?? '해당 지역';
+
+    // 피드백 기반 카카오 검색 (실제 대안 장소 확보)
+    const placeCandidates = await this.searchKakaoForDate(regionFromTimeline, [feedback], 5);
+
+    const placesListText = placeCandidates.length === 0
+      ? '검색된 대안 장소가 없습니다.'
+      : placeCandidates.map((p, i) => `${i + 1}. [${p.id}] ${p.name} | ${p.address} | ${p.category}`).join('\n');
+
+    const timelineText = timeline.map(t =>
+      `${t.time} ${t.emoji} ${t.place}${t.address ? ` (${t.address})` : ''} - ${t.activity}`
+    ).join('\n');
+
+    const prompt = `커플의 하루 데이트 타임라인을 수정 요청에 맞게 업데이트해주세요.
+
+[현재 타임라인]
+${timelineText}
+
+[수정 요청]
+${feedback}
+
+[대안으로 쓸 수 있는 실제 장소 후보 (카카오 검색 결과)]
+${placesListText}
+
+[규칙]
+- 수정 요청과 관련 없는 항목은 반드시 그대로 유지하세요
+- 변경이 필요한 항목은 가능하면 위 실제 장소 후보에서 선택하세요
+- 실제 장소를 선택했다면 place에 실제 장소명, address에 실제 주소, kakaoId에 [ ] 안의 ID를 사용하세요
+- 기존 항목의 address·kakaoId도 그대로 유지하세요
+
+다음 JSON만 반환 (다른 텍스트 없이):
+{
+  "analysis": "수정된 내용 요약 (1-2문장, 한국어)",
+  "timeline": [
+    { "time": "HH:MM", "emoji": "이모지", "place": "장소명", "address": "주소 또는 null", "kakaoId": "ID 또는 null", "activity": "활동 설명", "tip": "한 줄 팁" }
+  ]
+}`;
+
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.6, maxOutputTokens: 1200 },
+          }),
+        },
+      );
+      const raw = await response.json();
+      if (!raw.candidates?.length) throw new Error(raw.error?.message ?? 'Gemini API no candidates');
+      const text = raw.candidates[0]?.content?.parts?.[0]?.text ?? '';
+      const cleaned = text.replace(/```json?\s*/gi, '').replace(/```/g, '');
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      if (!parsed?.timeline) throw new Error('Gemini returned no timeline');
+      return { ...parsed, creditsRemaining };
+    } catch {
+      return { creditsRemaining, analysis: '수정에 실패했어요. 다시 시도해주세요.', timeline };
     }
   }
 
