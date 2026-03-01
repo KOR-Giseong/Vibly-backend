@@ -20,4 +20,18 @@ export class MoodSearchDto {
   @Max(180)
   @Type(() => Number)
   lng?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(50)
+  @Type(() => Number)
+  limit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(500)
+  @Max(20000)
+  @Type(() => Number)
+  radius?: number;
 }

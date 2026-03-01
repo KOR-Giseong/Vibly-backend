@@ -101,6 +101,7 @@ export class KakaoService {
     page = 1,
     sort: 'accuracy' | 'distance' = 'distance',
     limit = 15,
+    radiusM?: number,
   ): Promise<Place[]> {
     try {
       const params: Record<string, unknown> = {
@@ -112,6 +113,7 @@ export class KakaoService {
         params.x = lng;
         params.y = lat;
         params.sort = sort;
+        if (radiusM != null) params.radius = radiusM;
       }
 
       const { data } = await firstValueFrom(

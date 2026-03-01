@@ -22,7 +22,7 @@ export class MoodService {
     private placeService: PlaceService,
   ) {}
 
-  async search(query: string, userId?: string, lat?: number, lng?: number) {
+  async search(query: string, userId?: string, lat?: number, lng?: number, limit = 20, radius?: number) {
     // 위치 없으면 서울 시청 기본값
     const searchLat = lat ?? 37.5665;
     const searchLng = lng ?? 126.9780;
@@ -35,7 +35,7 @@ export class MoodService {
     const analysis = quickMatch ?? (await this.analyzeWithGemini(query));
 
     // 3. 카카오 실제 장소 검색 (키워드별 병렬 호출)
-    const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng);
+    const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng, limit, radius);
 
     // 4. Google Places로 사진 + 평점 보완 (API 키 없으면 자동 생략)
     const enrichedResults = await this.googlePlaces.enrichPlaces(kakaoResults);
@@ -122,12 +122,12 @@ export class MoodService {
   }
 
   // ── 카카오 병렬 검색 ─────────────────────────────────────────────────────────
-  private async searchKakaoPlaces(keywords: string[], lat: number, lng: number) {
+  private async searchKakaoPlaces(keywords: string[], lat: number, lng: number, limit: number, radius?: number) {
     // 키워드별 카카오 검색 병렬 실행
     // accuracy 정렬: 거리 무관하게 키워드 관련성 높은 장소 우선
     // lat/lng는 거리 표시용으로만 전달
     const resultSets = await Promise.all(
-      keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'accuracy')),
+      keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'accuracy', limit, radius)),
     );
 
     // 키워드별로 균등하게 인터리빙 (카페만 나오지 않도록)
@@ -137,9 +137,9 @@ export class MoodService {
     const merged: typeof resultSets[0] = [];
     const maxLen = Math.max(...resultSets.map((r) => r.length));
 
-    for (let i = 0; i < maxLen && merged.length < 10; i++) {
+    for (let i = 0; i < maxLen && merged.length < limit; i++) {
       for (const set of resultSets) {
-        if (merged.length >= 10) break;
+        if (merged.length >= limit) break;
         const place = set[i];
         if (place && !seen.has(place.id)) {
           seen.add(place.id);

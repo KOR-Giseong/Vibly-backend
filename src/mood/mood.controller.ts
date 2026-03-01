@@ -24,7 +24,7 @@ export class MoodController {
     // 구독자는 크레딧 없이 무제한 검색 (spend 내부에서 처리)
     // 비구독자는 최소 5 크레딧 보유 여부를 spend 시 검증
     // → 먼저 5크레딧만 차감 (quick match 기준), AI 검색이면 추가 5 차감
-    const result = await this.moodService.search(body.query, userId, body.lat, body.lng);
+    const result = await this.moodService.search(body.query, userId, body.lat, body.lng, body.limit, body.radius);
 
     // 검색 완료 후 크레딧 차감 (구독자는 spend 내부에서 자동 스킵)
     const txType = result.wasAiSearch ? CreditTxType.MOOD_SEARCH_AI : CreditTxType.MOOD_SEARCH_BASIC;
