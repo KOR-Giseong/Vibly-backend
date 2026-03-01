@@ -10,6 +10,12 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // watch 모드 재시작 시 포트 즉시 해제
+  app.enableShutdownHooks();
+  const shutdown = async () => { await app.close(); process.exit(0); };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT',  shutdown);
+
   app.use(helmet());
   // JSON body size 제한 확대 (아바타 base64 이미지 업로드)
   app.use(express.json({ limit: '10mb' }));
