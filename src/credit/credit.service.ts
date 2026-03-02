@@ -319,7 +319,11 @@ export class CreditService {
     durationDays: number,
   ) {
     await this.assertAdmin(adminId);
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // 이메일 형식이면 이메일로 검색, 아니면 UUID로 검색
+    const isEmail = userId.includes('@');
+    const user = isEmail
+      ? await this.prisma.user.findFirst({ where: { email: userId } })
+      : await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('사용자를 찾을 수 없어요.');
 
     const expiresAt = new Date();
@@ -327,7 +331,7 @@ export class CreditService {
 
     const sub = await this.prisma.subscription.create({
       data: {
-        userId,
+        userId: user.id,
         platform: SubscriptionPlatform.WEB,
         type,
         receiptData: '',
