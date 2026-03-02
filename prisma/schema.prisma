@@ -371,13 +371,15 @@ model CreditTransaction {
   userId      String
   amount      Int           // 양수=획득, 음수=소모
   type        CreditTxType
-  referenceId String?       // 관련 체크인 ID 등
+  referenceId String?       // 관련 체크인 ID 또는 adminId (ADMIN_GRANT)
+  note        String?       // 이벤트명 또는 지급 사유 (ADMIN_GRANT 전체 지급 시)
   createdAt   DateTime      @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([userId, createdAt])
+  @@index([type, createdAt])
 }
 
 model AdWatchLog {
@@ -401,12 +403,14 @@ model Subscription {
   receiptData String               @default("")
   productId   String               @default("")
   expiresAt   DateTime
+  adminId     String?              // 관리자 부여 시 adminId 기록
   createdAt   DateTime             @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([userId, expiresAt])
+  @@index([createdAt])
 }
 
 model PartnerAd {

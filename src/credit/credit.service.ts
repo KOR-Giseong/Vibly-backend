@@ -353,15 +353,162 @@ export class CreditService {
         receiptData: '',
         productId: `admin_grant_${type.toLowerCase()}`,
         expiresAt,
+        adminId,
       },
       include: {
         user: { select: { id: true, name: true, nickname: true, email: true } },
       },
     });
+
+    // 프리미엄 전환 알림
+    const durationText = this.formatDuration(durationDays);
+    this.notificationService
+      .send(
+        user.id,
+        'CREDIT',
+        '프리미엄 멤버십이 활성화됐어요 👑',
+        `관리자에 의해 프리미엄 계정으로 전환되었습니다!\n${durationText}동안 프리미엄 계정으로 사용하실 수 있습니다`,
+        { type: 'PREMIUM_GRANT', durationDays, expiresAt: expiresAt.toISOString() },
+      )
+      .catch(() => {});
+
     this.logger.log(
-      `구독 부여 [ADMIN] userId=${userId} type=${type} durationDays=${durationDays}`,
+      `구독 부여 [ADMIN] adminId=${adminId} userId=${user.id} type=${type} durationDays=${durationDays}`,
     );
     return sub;
+  }
+
+  // 어드민: 전체 크레딧 지급 (이벤트성)
+  async adminBulkGrantCredits(
+    adminId: string,
+    amount: number,
+    note?: string,
+  ): Promise<{ count: number }> {
+    await this.assertAdmin(adminId);
+    if (amount <= 0) throw new BadRequestException('지급 크레딧은 1 이상이어야 해요.');
+
+    const users = await this.prisma.user.findMany({
+      where: { status: 'ACTIVE', deletedAt: null },
+      select: { id: true },
+    });
+
+    const eventNote = note?.trim() || '이벤트 크레딧 지급';
+
+    await this.prisma.$transaction([
+      this.prisma.user.updateMany({
+        where: { status: 'ACTIVE', deletedAt: null },
+        data: { credits: { increment: amount } },
+      }),
+      this.prisma.creditTransaction.createMany({
+        data: users.map((u) => ({
+          userId: u.id,
+          amount,
+          type: CreditTxType.ADMIN_GRANT,
+          referenceId: adminId,
+          note: eventNote,
+        })),
+      }),
+    ]);
+
+    // 전체 알림 브로드캐스트
+    this.notificationService
+      .broadcast(
+        adminId,
+        `크레딧이 지급됐어요 🎁`,
+        `이벤트 보상 크레딧 ${amount}개가 지급되었어요.${note ? ` (${note})` : ''}`,
+      )
+      .catch(() => {});
+
+    this.logger.log(
+      `전체 크레딧 지급 [ADMIN] adminId=${adminId} amount=${amount} count=${users.length} note="${eventNote}"`,
+    );
+    return { count: users.length };
+  }
+
+  // 어드민: 크레딧 지급 내역 (ADMIN_GRANT 트랜잭션)
+  async adminGetCreditGrantHistory(adminId: string, page = 1, limit = 30) {
+    await this.assertAdmin(adminId);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.creditTransaction.findMany({
+        where: { type: CreditTxType.ADMIN_GRANT },
+        include: {
+          user: { select: { id: true, name: true, nickname: true, email: true, avatarUrl: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.creditTransaction.count({ where: { type: CreditTxType.ADMIN_GRANT } }),
+    ]);
+
+    // referenceId(adminId)로 관리자 정보 조회
+    const adminIds = [...new Set(items.map((i) => i.referenceId).filter(Boolean) as string[])];
+    const admins = adminIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: adminIds } },
+          select: { id: true, name: true, nickname: true, email: true },
+        })
+      : [];
+    const adminMap = new Map(admins.map((a) => [a.id, a]));
+
+    return {
+      items: items.map((tx) => ({
+        ...tx,
+        admin: tx.referenceId ? (adminMap.get(tx.referenceId) ?? null) : null,
+      })),
+      total,
+      page,
+      hasNext: skip + items.length < total,
+    };
+  }
+
+  // 어드민: 전체 구독 내역 (활성 + 만료 포함)
+  async adminGetAllSubscriptions(adminId: string, page = 1, limit = 30) {
+    await this.assertAdmin(adminId);
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        include: {
+          user: { select: { id: true, name: true, nickname: true, email: true, avatarUrl: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.subscription.count(),
+    ]);
+
+    // adminId로 관리자 정보 조회
+    const adminIds = [...new Set(items.map((s) => s.adminId).filter(Boolean) as string[])];
+    const admins = adminIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: { id: { in: adminIds } },
+          select: { id: true, name: true, nickname: true, email: true },
+        })
+      : [];
+    const adminMap = new Map(admins.map((a) => [a.id, a]));
+
+    return {
+      items: items.map((sub) => ({
+        ...sub,
+        admin: sub.adminId ? (adminMap.get(sub.adminId) ?? null) : null,
+      })),
+      total,
+      page,
+      hasNext: skip + items.length < total,
+    };
+  }
+
+  // ── 기간 포맷 (30일→1개월, 365일→1년) ─────────────────────────────────────
+  private formatDuration(days: number): string {
+    if (days >= 365 && days % 365 === 0) return `${days / 365}년`;
+    if (days >= 30 && days % 30 === 0) return `${days / 30}개월`;
+    if (days >= 365) return `약 ${Math.floor(days / 365)}년`;
+    if (days >= 30) return `약 ${Math.round(days / 30)}개월`;
+    return `${days}일`;
   }
 
   // 어드민: 구독 취소 (expiresAt을 현재로 설정)

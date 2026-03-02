@@ -93,6 +93,35 @@ export class CreditController {
     return this.creditService.adminListSubscriptions(req.user.id, +(page ?? 1), +(limit ?? 30));
   }
 
+  // 전체 구독 내역 (활성 + 만료 포함)
+  @Get('admin/subscriptions/history')
+  adminGetSubscriptionHistory(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.creditService.adminGetAllSubscriptions(req.user.id, +(page ?? 1), +(limit ?? 30));
+  }
+
+  // 크레딧 지급 내역 (ADMIN_GRANT)
+  @Get('admin/credit-history')
+  adminGetCreditHistory(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.creditService.adminGetCreditGrantHistory(req.user.id, +(page ?? 1), +(limit ?? 30));
+  }
+
+  // 전체 크레딧 지급 (이벤트성)
+  @Post('admin/bulk-grant')
+  adminBulkGrant(
+    @Req() req: any,
+    @Body() body: { amount: number; note?: string },
+  ) {
+    return this.creditService.adminBulkGrantCredits(req.user.id, body.amount, body.note);
+  }
+
   // 구독 부여
   @Post('admin/subscriptions')
   adminGrantSubscription(
