@@ -54,8 +54,9 @@ export declare class AuthController {
             anniversaryDate: Date | null;
             createdAt: Date;
         } | null;
-        name: string;
         id: string;
+        name: string;
+        createdAt: Date;
         email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
@@ -67,14 +68,14 @@ export declare class AuthController {
         suspendedUntil: Date | null;
         suspendReason: string | null;
         credits: number;
-        createdAt: Date;
     } | null>;
     checkNickname(req: any, nickname: string): Promise<{
         available: boolean;
     }>;
     updateProfile(req: any, dto: UpdateProfileDto): Promise<{
-        name: string;
         id: string;
+        name: string;
+        createdAt: Date;
         email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
@@ -82,7 +83,6 @@ export declare class AuthController {
         preferredVibes: string[];
         isProfileComplete: boolean;
         status: import("@prisma/client").$Enums.UserStatus;
-        createdAt: Date;
     }>;
     updateAvatar(req: any, body: {
         base64: string;

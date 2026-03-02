@@ -861,12 +861,9 @@ ${placesListText}
     if (!memory || memory.coupleId !== couple.id) throw new NotFoundException('추억을 찾을 수 없어요.');
     if (memory.uploaderId !== userId) throw new ForbiddenException('본인이 업로드한 사진만 삭제할 수 있어요.');
 
-    try {
-      const path = await import('path');
-      const fs = await import('fs/promises');
-      const filename = path.basename(memory.imageUrl);
-      await fs.unlink(path.join(process.cwd(), 'public', 'memories', filename));
-    } catch {}
+    if (memory.imageUrl) {
+      void this.r2.deleteByUrl(memory.imageUrl);
+    }
 
     await this.prisma.coupleMemory.delete({ where: { id: memoryId } });
     return { success: true };

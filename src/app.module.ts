@@ -21,7 +21,7 @@ import { NotificationModule } from './notification/notification.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 60_000,  limit: 120 },
-      { name: 'auth',    ttl: 900_000, limit: 10  },
+      { name: 'auth',    ttl: 900_000, limit: 50  },
     ]),
     PrismaModule,
     AppConfigModule,

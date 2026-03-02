@@ -26,9 +26,9 @@ export declare class CoupleController {
         id: string;
         createdAt: Date;
         status: import("@prisma/client").$Enums.InvitationStatus;
+        message: string | null;
         senderId: string;
         receiverId: string;
-        message: string | null;
         respondedAt: Date | null;
     }>;
     getReceivedInvitations(req: any): Promise<({
@@ -42,9 +42,9 @@ export declare class CoupleController {
         id: string;
         createdAt: Date;
         status: import("@prisma/client").$Enums.InvitationStatus;
+        message: string | null;
         senderId: string;
         receiverId: string;
-        message: string | null;
         respondedAt: Date | null;
     })[]>;
     getSentInvitations(req: any): Promise<({
@@ -58,9 +58,9 @@ export declare class CoupleController {
         id: string;
         createdAt: Date;
         status: import("@prisma/client").$Enums.InvitationStatus;
+        message: string | null;
         senderId: string;
         receiverId: string;
-        message: string | null;
         respondedAt: Date | null;
     })[]>;
     respondToInvitation(req: any, id: string, body: {
@@ -301,10 +301,10 @@ export declare class CoupleController {
             id: string;
             createdAt: Date;
             type: import("@prisma/client").$Enums.MessageType;
+            text: string | null;
             coupleId: string;
             senderId: string;
             readAt: Date | null;
-            text: string | null;
             emoji: string | null;
         }[];
         total: number;
@@ -320,11 +320,11 @@ export declare class CoupleController {
         id: string;
         createdAt: Date;
         type: import("@prisma/client").$Enums.MessageType;
+        text: string | null;
         coupleId: string;
         imageUrl: string | null;
         senderId: string;
         readAt: Date | null;
-        text: string | null;
         emoji: string | null;
     }>;
     markMessagesRead(req: any): Promise<{

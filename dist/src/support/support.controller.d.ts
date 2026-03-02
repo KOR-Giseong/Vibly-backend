@@ -257,8 +257,8 @@ export declare class SupportController {
             createdAt: Date;
             userId: string;
             note: string | null;
-            placeId: string;
             imageUrl: string | null;
+            placeId: string;
             mood: string;
             receiptVerified: boolean;
             receiptHash: string | null;

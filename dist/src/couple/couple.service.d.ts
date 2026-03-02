@@ -62,9 +62,9 @@ export declare class CoupleService {
         id: string;
         createdAt: Date;
         status: import("@prisma/client").$Enums.InvitationStatus;
+        message: string | null;
         senderId: string;
         receiverId: string;
-        message: string | null;
         respondedAt: Date | null;
     }>;
     getReceivedInvitations(userId: string): Promise<({
@@ -78,9 +78,9 @@ export declare class CoupleService {
         id: string;
         createdAt: Date;
         status: import("@prisma/client").$Enums.InvitationStatus;
+        message: string | null;
         senderId: string;
         receiverId: string;
-        message: string | null;
         respondedAt: Date | null;
     })[]>;
     getSentInvitations(userId: string): Promise<({
@@ -94,9 +94,9 @@ export declare class CoupleService {
         id: string;
         createdAt: Date;
         status: import("@prisma/client").$Enums.InvitationStatus;
+        message: string | null;
         senderId: string;
         receiverId: string;
-        message: string | null;
         respondedAt: Date | null;
     })[]>;
     respondToInvitation(invitationId: string, userId: string, accept: boolean): Promise<{
@@ -326,10 +326,10 @@ export declare class CoupleService {
             id: string;
             createdAt: Date;
             type: import("@prisma/client").$Enums.MessageType;
+            text: string | null;
             coupleId: string;
             senderId: string;
             readAt: Date | null;
-            text: string | null;
             emoji: string | null;
         }[];
         total: number;
@@ -345,11 +345,11 @@ export declare class CoupleService {
         id: string;
         createdAt: Date;
         type: import("@prisma/client").$Enums.MessageType;
+        text: string | null;
         coupleId: string;
         imageUrl: string | null;
         senderId: string;
         readAt: Date | null;
-        text: string | null;
         emoji: string | null;
     }>;
     markMessagesRead(userId: string): Promise<{
