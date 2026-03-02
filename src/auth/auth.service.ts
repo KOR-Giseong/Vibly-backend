@@ -118,16 +118,27 @@ export class AuthService {
 
   // ── Google Auth ────────────────────────────────────────────────────────────
 
-  async googleLogin(code: string, redirectUri: string) {
+  async googleLogin(code: string, redirectUri: string, codeVerifier?: string) {
     try {
+      // iOS 네이티브: iOS 클라이언트 ID + PKCE (client_secret 없음)
+      // Web: Web 클라이언트 ID + client_secret
+      const isNative = Boolean(codeVerifier);
+      const clientId = isNative
+        ? this.config.get('GOOGLE_IOS_CLIENT_ID')
+        : this.config.get('GOOGLE_CLIENT_ID');
+      const body: Record<string, string> = {
+        code,
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      };
+      if (isNative && codeVerifier) {
+        body['code_verifier'] = codeVerifier;
+      } else {
+        body['client_secret'] = this.config.get('GOOGLE_CLIENT_SECRET') ?? '';
+      }
       const { data: tokenData } = await firstValueFrom(
-        this.http.post('https://oauth2.googleapis.com/token', {
-          code,
-          client_id: this.config.get('GOOGLE_CLIENT_ID'),
-          client_secret: this.config.get('GOOGLE_CLIENT_SECRET'),
-          redirect_uri: redirectUri,
-          grant_type: 'authorization_code',
-        }),
+        this.http.post('https://oauth2.googleapis.com/token', body),
       );
 
       // id_token은 JWT - 페이로드 디코딩

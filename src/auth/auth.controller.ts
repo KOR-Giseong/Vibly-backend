@@ -46,7 +46,7 @@ export class AuthController {
   @Post('google')
   @Throttle({ auth: {} })
   googleLogin(@Body() dto: SocialLoginDto) {
-    return this.authService.googleLogin(dto.idToken, dto.redirectUri ?? '');
+    return this.authService.googleLogin(dto.idToken, dto.redirectUri ?? '', dto.codeVerifier);
   }
 
   @Post('kakao')

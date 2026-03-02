@@ -11,4 +11,8 @@ export class SocialLoginDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  codeVerifier?: string;
 }
