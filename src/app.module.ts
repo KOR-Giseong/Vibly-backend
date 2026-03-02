@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AppConfigModule } from './config/app-config.module';
 import { AuthModule } from './auth/auth.module';
@@ -33,7 +35,9 @@ import { NotificationModule } from './notification/notification.module';
     CoupleModule,
     NotificationModule,
   ],
+  controllers: [AppController],
   providers: [
+    AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // Rate Limiting 전역 적용
   ],
 })

@@ -11,6 +11,8 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
+const app_controller_1 = require("./app.controller");
+const app_service_1 = require("./app.service");
 const prisma_module_1 = require("./prisma/prisma.module");
 const app_config_module_1 = require("./config/app-config.module");
 const auth_module_1 = require("./auth/auth.module");
@@ -45,7 +47,9 @@ exports.AppModule = AppModule = __decorate([
             couple_module_1.CoupleModule,
             notification_module_1.NotificationModule,
         ],
+        controllers: [app_controller_1.AppController],
         providers: [
+            app_service_1.AppService,
             { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard },
         ],
     })
