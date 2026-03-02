@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import * as dns from 'dns';
+// Render는 IPv6 아웃바운드 미지원 → Gmail SMTP 포함 모든 DNS를 IPv4 우선으로
+dns.setDefaultResultOrder('ipv4first');
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
