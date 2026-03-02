@@ -9,6 +9,7 @@ import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthProvider } from '@prisma/client';
 import { CreditService } from '../credit/credit.service';
+import { R2Service } from '../storage/r2.service';
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     private config: ConfigService,
     private http: HttpService,
     private creditService: CreditService,
+    private r2: R2Service,
   ) {
     if (!config.get<string>('JWT_REFRESH_SECRET')) {
       throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
@@ -354,40 +356,30 @@ export class AuthService {
     });
   }
 
-  // ── 아바새 업데이트 ───────────────────────────────────────────────────────────────
+  // ── 아바타 업데이트 (R2 오브젝트 스토리지) ─────────────────────────────────
   async updateAvatar(userId: string, base64: string): Promise<{ avatarUrl: string }> {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-    const ext = base64.startsWith('data:image/png') ? 'png' : 'jpg';
-    const filename = `${userId}-${Date.now()}.${ext}`;
-    const dir = path.join(process.cwd(), 'public', 'avatars');
-    await fs.mkdir(dir, { recursive: true });
+    const isPng = base64.startsWith('data:image/png');
+    const ext = isPng ? 'png' : 'jpg';
+    const mimeType = isPng ? 'image/png' : 'image/jpeg';
 
-    // base64 데이터 URI 압도제거
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
-    await fs.writeFile(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
+    const buffer = Buffer.from(base64Data, 'base64');
 
-    const host = this.config.get<string>('SERVER_URL') ?? `http://192.168.219.113:3000`;
-    const avatarUrl = `${host}/public/avatars/${filename}`;
-
-    // 이전 아바새 파일 삭제
+    // 이전 아바타 R2에서 삭제
     const prev = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
-    if (prev?.avatarUrl?.includes('/public/avatars/')) {
-      const oldFile = path.join(process.cwd(), 'public', 'avatars', path.basename(prev.avatarUrl));
-      fs.unlink(oldFile).catch(() => {});
+    if (prev?.avatarUrl) {
+      void this.r2.deleteByUrl(prev.avatarUrl);
     }
 
+    const avatarUrl = await this.r2.upload(buffer, 'avatars', ext, mimeType);
     await this.prisma.user.update({ where: { id: userId }, data: { avatarUrl } });
     return { avatarUrl };
   }
 
   async resetAvatar(userId: string): Promise<{ success: boolean }> {
-    const fs = await import('fs/promises');
-    const path = await import('path');
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
-    if (user?.avatarUrl?.includes('/public/avatars/')) {
-      const oldFile = path.join(process.cwd(), 'public', 'avatars', path.basename(user.avatarUrl));
-      fs.unlink(oldFile).catch(() => {});
+    if (user?.avatarUrl) {
+      void this.r2.deleteByUrl(user.avatarUrl);
     }
     await this.prisma.user.update({ where: { id: userId }, data: { avatarUrl: null } });
     return { success: true };

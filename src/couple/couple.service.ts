@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreditService } from '../credit/credit.service';
 import { KakaoService } from '../place/kakao.service';
 import { NotificationService } from '../notification/notification.service';
+import { R2Service } from '../storage/r2.service';
 
 const COUPLE_DATE_AI_COST = 15;
 const COUPLE_DATE_AI_REFINE_COST = 2;
@@ -23,6 +24,7 @@ export class CoupleService {
     private creditService: CreditService,
     private kakao: KakaoService,
     private notificationService: NotificationService,
+    private r2: R2Service,
   ) {}
 
   // ── 내부 헬퍼: 내 현재 활성 커플 조회 ──────────────────────────────────────
@@ -828,20 +830,16 @@ ${placesListText}
       }
     }
 
-    const fs = await import('fs/promises');
-    const path = await import('path');
     // expo-image-picker는 data URI 없이 raw base64 반환 → PNG는 'iVBORw' 로 시작
     const isPng = data.base64.startsWith('iVBORw') || data.base64.startsWith('data:image/png');
     const ext = isPng ? 'png' : 'jpg';
-    const filename = `memory-${couple.id}-${userId}-${Date.now()}.${ext}`;
-    const dir = path.join(process.cwd(), 'public', 'memories');
-    await fs.mkdir(dir, { recursive: true });
 
     const base64Data = data.base64.replace(/^data:image\/\w+;base64,/, '');
-    await fs.writeFile(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
+    const buffer = Buffer.from(base64Data, 'base64');
+    const mimeType = isPng ? 'image/png' : 'image/jpeg';
 
-    // 경로만 저장 (호스트 없이) → getMemories에서 SERVER_URL 붙여서 반환
-    const imageUrl = `/public/memories/${filename}`;
+    // R2에 업로드 (full URL 반환)
+    const imageUrl = await this.r2.upload(buffer, 'memories', ext, mimeType);
 
     return this.prisma.coupleMemory.create({
       data: {
@@ -1009,16 +1007,12 @@ ${placesListText}
 
     let imageUrl: string | null = null;
     if (dto.type === 'IMAGE' && dto.imageBase64) {
-      const fs = await import('fs/promises');
-      const path = await import('path');
       const isPng = dto.imageBase64.startsWith('iVBORw') || dto.imageBase64.startsWith('data:image/png');
       const ext = isPng ? 'png' : 'jpg';
-      const filename = `chat-${couple.id}-${userId}-${Date.now()}.${ext}`;
-      const dir = path.join(process.cwd(), 'public', 'chat');
-      await fs.mkdir(dir, { recursive: true });
+      const mimeType = isPng ? 'image/png' : 'image/jpeg';
       const base64Data = dto.imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      await fs.writeFile(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
-      imageUrl = `/public/chat/${filename}`;
+      const buffer = Buffer.from(base64Data, 'base64');
+      imageUrl = await this.r2.upload(buffer, 'chat', ext, mimeType);
     }
 
     const message = await this.prisma.coupleMessage.create({
@@ -1032,11 +1026,8 @@ ${placesListText}
       },
     });
 
-    const host = process.env.SERVER_URL ?? 'http://localhost:3000';
-    return {
-      ...message,
-      imageUrl: imageUrl ? `${host}${imageUrl}` : null,
-    };
+    // imageUrl은 R2 full URL이므로 그대로 반환
+    return message;
   }
 
   // ── 채팅: 읽음 처리 ──────────────────────────────────────────────────────────

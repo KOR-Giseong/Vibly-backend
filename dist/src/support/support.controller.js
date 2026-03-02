@@ -19,13 +19,15 @@ const throttler_1 = require("@nestjs/throttler");
 const platform_express_1 = require("@nestjs/platform-express");
 const multer_1 = require("multer");
 const path_1 = require("path");
-const crypto_1 = require("crypto");
 const support_service_1 = require("./support.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
+const r2_service_1 = require("../storage/r2.service");
 let SupportController = class SupportController {
     supportService;
-    constructor(supportService) {
+    r2;
+    constructor(supportService, r2) {
         this.supportService = supportService;
+        this.r2 = r2;
     }
     getFaqCategories() {
         return this.supportService.getFaqCategories();
@@ -39,8 +41,10 @@ let SupportController = class SupportController {
     getMessages(req, id) {
         return this.supportService.getMessages(req.user.id, id);
     }
-    uploadImage(file) {
-        return { imageUrl: `/public/support-images/${file.filename}` };
+    async uploadImage(file) {
+        const ext = (0, path_1.extname)(file.originalname).replace('.', '') || 'jpg';
+        const imageUrl = await this.r2.upload(file.buffer, 'support-images', ext, file.mimetype);
+        return { imageUrl };
     }
     sendMessage(req, id, body) {
         return this.supportService.sendMessage(req.user.id, id, body.body, body.imageUrl);
@@ -129,10 +133,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('upload-image'),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('image', {
-        storage: (0, multer_1.diskStorage)({
-            destination: './public/support-images',
-            filename: (_req, file, cb) => cb(null, `${(0, crypto_1.randomUUID)()}${(0, path_1.extname)(file.originalname)}`),
-        }),
+        storage: (0, multer_1.memoryStorage)(),
         limits: { fileSize: 10 * 1024 * 1024 },
         fileFilter: (_req, file, cb) => {
             if (!file.mimetype.startsWith('image/'))
@@ -143,7 +144,7 @@ __decorate([
     __param(0, (0, common_1.UploadedFile)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], SupportController.prototype, "uploadImage", null);
 __decorate([
     (0, common_1.Post)('tickets/:id/messages'),
@@ -295,6 +296,7 @@ exports.SupportController = SupportController = __decorate([
     (0, common_1.Controller)('support'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, swagger_1.ApiBearerAuth)(),
-    __metadata("design:paramtypes", [support_service_1.SupportService])
+    __metadata("design:paramtypes", [support_service_1.SupportService,
+        r2_service_1.R2Service])
 ], SupportController);
 //# sourceMappingURL=support.controller.js.map

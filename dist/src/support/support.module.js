@@ -12,12 +12,13 @@ const support_service_1 = require("./support.service");
 const support_controller_1 = require("./support.controller");
 const prisma_module_1 = require("../prisma/prisma.module");
 const notification_module_1 = require("../notification/notification.module");
+const storage_module_1 = require("../storage/storage.module");
 let SupportModule = class SupportModule {
 };
 exports.SupportModule = SupportModule;
 exports.SupportModule = SupportModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule, notification_module_1.NotificationModule],
+        imports: [prisma_module_1.PrismaModule, notification_module_1.NotificationModule, storage_module_1.StorageModule],
         controllers: [support_controller_1.SupportController],
         providers: [support_service_1.SupportService],
         exports: [support_service_1.SupportService],

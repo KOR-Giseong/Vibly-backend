@@ -3,13 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditService } from '../credit/credit.service';
+import { R2Service } from '../storage/r2.service';
 export declare class AuthService {
     private prisma;
     private jwt;
     private config;
     private http;
     private creditService;
-    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService, http: HttpService, creditService: CreditService);
+    private r2;
+    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService, http: HttpService, creditService: CreditService, r2: R2Service);
     emailSignup(email: string, password: string, name: string): Promise<{
         accessToken: string;
         refreshToken: string;
@@ -56,9 +58,8 @@ export declare class AuthService {
             createdAt: Date;
         } | null;
         id: string;
-        name: string;
-        createdAt: Date;
         email: string | null;
+        name: string;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
@@ -69,6 +70,7 @@ export declare class AuthService {
         suspendedUntil: Date | null;
         suspendReason: string | null;
         credits: number;
+        createdAt: Date;
     } | null>;
     checkNickname(nickname: string, userId: string): Promise<{
         available: boolean;
@@ -80,15 +82,15 @@ export declare class AuthService {
         preferredVibes?: string[];
     }): Promise<{
         id: string;
-        name: string;
-        createdAt: Date;
         email: string | null;
+        name: string;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
         preferredVibes: string[];
         isProfileComplete: boolean;
         status: import("@prisma/client").$Enums.UserStatus;
+        createdAt: Date;
     }>;
     updateAvatar(userId: string, base64: string): Promise<{
         avatarUrl: string;

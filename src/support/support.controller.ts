@@ -15,12 +15,12 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { memoryStorage } from 'multer';
 import { extname } from 'path';
-import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import { SupportService } from './support.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { R2Service } from '../storage/r2.service';
 
 interface AuthRequest extends Request {
   user: { id: string; isAdmin: boolean };
@@ -31,7 +31,10 @@ interface AuthRequest extends Request {
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class SupportController {
-  constructor(private supportService: SupportService) {}
+  constructor(
+    private supportService: SupportService,
+    private r2: R2Service,
+  ) {}
 
   // ── 사용자 ────────────────────────────────────────────────────────────────
 
@@ -68,11 +71,7 @@ export class SupportController {
   @Post('upload-image')
   @UseInterceptors(
     FileInterceptor('image', {
-      storage: diskStorage({
-        destination: './public/support-images',
-        filename: (_req, file, cb) =>
-          cb(null, `${randomUUID()}${extname(file.originalname)}`),
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
       fileFilter: (_req, file, cb) => {
         if (!file.mimetype.startsWith('image/'))
@@ -81,8 +80,10 @@ export class SupportController {
       },
     }),
   )
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
-    return { imageUrl: `/public/support-images/${file.filename}` };
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
+    const ext = extname(file.originalname).replace('.', '') || 'jpg';
+    const imageUrl = await this.r2.upload(file.buffer, 'support-images', ext, file.mimetype);
+    return { imageUrl };
   }
 
   @Post('tickets/:id/messages')

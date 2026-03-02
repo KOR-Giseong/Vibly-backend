@@ -7,12 +7,14 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { CreditModule } from '../credit/credit.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     PassportModule,
     HttpModule,
     CreditModule,
+    StorageModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

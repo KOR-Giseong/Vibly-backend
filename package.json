@@ -21,6 +21,7 @@
     "postinstall": "prisma generate && ([ -L node_modules/@prisma/client/.prisma ] || ln -s ../../.prisma node_modules/@prisma/client/.prisma)"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1000.0",
     "@google-cloud/vision": "^5.3.4",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/bull": "^11.0.4",

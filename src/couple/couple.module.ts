@@ -5,9 +5,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CreditModule } from '../credit/credit.module';
 import { PlaceModule } from '../place/place.module';
 import { NotificationModule } from '../notification/notification.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
-  imports: [PrismaModule, CreditModule, PlaceModule, NotificationModule],
+  imports: [PrismaModule, CreditModule, PlaceModule, NotificationModule, StorageModule],
   controllers: [CoupleController],
   providers: [CoupleService],
   exports: [CoupleService],

@@ -16,6 +16,7 @@ const auth_controller_1 = require("./auth.controller");
 const auth_service_1 = require("./auth.service");
 const jwt_strategy_1 = require("./strategies/jwt.strategy");
 const credit_module_1 = require("../credit/credit.module");
+const storage_module_1 = require("../storage/storage.module");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
@@ -25,6 +26,7 @@ exports.AuthModule = AuthModule = __decorate([
             passport_1.PassportModule,
             axios_1.HttpModule,
             credit_module_1.CreditModule,
+            storage_module_1.StorageModule,
             jwt_1.JwtModule.registerAsync({
                 imports: [config_1.ConfigModule],
                 useFactory: (config) => ({

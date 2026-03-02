@@ -16,6 +16,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const credit_service_1 = require("../credit/credit.service");
 const kakao_service_1 = require("../place/kakao.service");
 const notification_service_1 = require("../notification/notification.service");
+const r2_service_1 = require("../storage/r2.service");
 const COUPLE_DATE_AI_COST = 15;
 const COUPLE_DATE_AI_REFINE_COST = 2;
 let CoupleService = CoupleService_1 = class CoupleService {
@@ -23,12 +24,14 @@ let CoupleService = CoupleService_1 = class CoupleService {
     creditService;
     kakao;
     notificationService;
+    r2;
     logger = new common_1.Logger(CoupleService_1.name);
-    constructor(prisma, creditService, kakao, notificationService) {
+    constructor(prisma, creditService, kakao, notificationService, r2) {
         this.prisma = prisma;
         this.creditService = creditService;
         this.kakao = kakao;
         this.notificationService = notificationService;
+        this.r2 = r2;
     }
     async findMyCouple(userId) {
         return this.prisma.couple.findFirst({
@@ -705,16 +708,12 @@ ${placesListText}
                 throw new common_1.ForbiddenException('무료 플랜은 추억 사진을 100장까지 저장할 수 있어요. 프리미엄으로 업그레이드해보세요!');
             }
         }
-        const fs = await import('fs/promises');
-        const path = await import('path');
         const isPng = data.base64.startsWith('iVBORw') || data.base64.startsWith('data:image/png');
         const ext = isPng ? 'png' : 'jpg';
-        const filename = `memory-${couple.id}-${userId}-${Date.now()}.${ext}`;
-        const dir = path.join(process.cwd(), 'public', 'memories');
-        await fs.mkdir(dir, { recursive: true });
         const base64Data = data.base64.replace(/^data:image\/\w+;base64,/, '');
-        await fs.writeFile(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
-        const imageUrl = `/public/memories/${filename}`;
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = isPng ? 'image/png' : 'image/jpeg';
+        const imageUrl = await this.r2.upload(buffer, 'memories', ext, mimeType);
         return this.prisma.coupleMemory.create({
             data: {
                 coupleId: couple.id,
@@ -856,16 +855,12 @@ ${placesListText}
             throw new common_1.NotFoundException('커플 정보를 찾을 수 없어요.');
         let imageUrl = null;
         if (dto.type === 'IMAGE' && dto.imageBase64) {
-            const fs = await import('fs/promises');
-            const path = await import('path');
             const isPng = dto.imageBase64.startsWith('iVBORw') || dto.imageBase64.startsWith('data:image/png');
             const ext = isPng ? 'png' : 'jpg';
-            const filename = `chat-${couple.id}-${userId}-${Date.now()}.${ext}`;
-            const dir = path.join(process.cwd(), 'public', 'chat');
-            await fs.mkdir(dir, { recursive: true });
+            const mimeType = isPng ? 'image/png' : 'image/jpeg';
             const base64Data = dto.imageBase64.replace(/^data:image\/\w+;base64,/, '');
-            await fs.writeFile(path.join(dir, filename), Buffer.from(base64Data, 'base64'));
-            imageUrl = `/public/chat/${filename}`;
+            const buffer = Buffer.from(base64Data, 'base64');
+            imageUrl = await this.r2.upload(buffer, 'chat', ext, mimeType);
         }
         const message = await this.prisma.coupleMessage.create({
             data: {
@@ -877,11 +872,7 @@ ${placesListText}
                 emoji: dto.emoji ?? null,
             },
         });
-        const host = process.env.SERVER_URL ?? 'http://localhost:3000';
-        return {
-            ...message,
-            imageUrl: imageUrl ? `${host}${imageUrl}` : null,
-        };
+        return message;
     }
     async markMessagesRead(userId) {
         const couple = await this.findMyCouple(userId);
@@ -958,6 +949,7 @@ exports.CoupleService = CoupleService = CoupleService_1 = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         credit_service_1.CreditService,
         kakao_service_1.KakaoService,
-        notification_service_1.NotificationService])
+        notification_service_1.NotificationService,
+        r2_service_1.R2Service])
 ], CoupleService);
 //# sourceMappingURL=couple.service.js.map
