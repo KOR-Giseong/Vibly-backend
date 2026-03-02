@@ -1007,7 +1007,16 @@ export class PlaceService {
     const results = await Promise.all(
       keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'distance', 5)),
     );
-    const places = results.flatMap((r) => r.slice(0, 3)).slice(0, 9);
+    // 중복 ID 제거 후 최대 9개
+    const seen = new Set<string>();
+    const places = results
+      .flatMap((r) => r.slice(0, 3))
+      .filter((p) => {
+        if (seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      })
+      .slice(0, 9);
 
     return { message, weather, timeOfDay, keywords, places };
   }
