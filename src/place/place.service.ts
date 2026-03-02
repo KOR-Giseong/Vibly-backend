@@ -953,7 +953,7 @@ export class PlaceService {
   }
 
   // ── 실시간 상황 기반 추천 (프리미엄 전용) ──────────────────────────────────────
-  async smartRecommend(userId: string, lat: number, lng: number) {
+  async smartRecommend(userId: string, lat: number, lng: number, mode: 'nearby' | 'wide' = 'nearby') {
     const subscribed = await this.creditService.isSubscribed(userId);
     if (!subscribed) {
       throw new ForbiddenException('실시간 추천은 프리미엄 기능이에요. 구독 후 이용해주세요!');
@@ -1032,8 +1032,12 @@ export class PlaceService {
     }
 
     // 4. 카카오 병렬 검색
+    // nearby: 현재 위치 기준 distance 정렬 (30km 반경)
+    // wide: 위치 없이 "서울 {키워드}" accuracy 정렬 → 서울 전체 핫플 기준
     const results = await Promise.all(
-      keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'distance', 5)),
+      mode === 'wide'
+        ? keywords.map((kw) => this.kakao.searchByKeyword(`서울 ${kw}`, undefined, undefined, 1, 'accuracy', 5))
+        : keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'distance', 5, 30000)),
     );
     // 중복 ID 제거 후 최대 9개
     const seen = new Set<string>();
@@ -1046,7 +1050,7 @@ export class PlaceService {
       })
       .slice(0, 9);
 
-    return { message, weather, timeOfDay, keywords, places };
+    return { message, weather, timeOfDay, keywords, places, mode };
   }
 
   // ── AI 리뷰 요약 (프리미엄 전용) ─────────────────────────────────────────────

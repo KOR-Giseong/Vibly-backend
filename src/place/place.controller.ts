@@ -174,7 +174,7 @@ export class PlaceController {
   @Post('smart-recommend')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  smartRecommend(@Req() req: any, @Body() body: { lat: number; lng: number }) {
-    return this.placeService.smartRecommend(req.user.id, body.lat, body.lng);
+  smartRecommend(@Req() req: any, @Body() body: { lat: number; lng: number; mode?: 'nearby' | 'wide' }) {
+    return this.placeService.smartRecommend(req.user.id, body.lat, body.lng, body.mode ?? 'nearby');
   }
 }
