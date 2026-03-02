@@ -69,4 +69,13 @@ export class NotificationController {
   deleteOne(@Req() req: { user: { id: string } }, @Param('id') id: string) {
     return this.notificationService.deleteOne(id, req.user.id);
   }
+
+  // ── 디바이스 토큰 삭제 (로그아웃 시) ──────────────────────────────────────
+  @Delete('register-token')
+  removeToken(
+    @Req() req: { user: { id: string } },
+    @Query('pushToken') pushToken?: string,
+  ) {
+    return this.notificationService.removeToken(req.user.id, pushToken);
+  }
 }
