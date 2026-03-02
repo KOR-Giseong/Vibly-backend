@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Param, Query, Body,
+  Controller, Get, Post, Delete, Param, Query, Body,
   UseGuards, Req, UseInterceptors, UploadedFile,
   ParseFilePipe, MaxFileSizeValidator, FileTypeValidator,
 } from '@nestjs/common';
@@ -123,12 +123,14 @@ export class PlaceController {
   }
 
   @Get(':id/reviews')
+  @UseGuards(OptionalJwtAuthGuard)
   getReviews(
+    @Req() req: any,
     @Param('id') id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.placeService.getReviews(id, +(page ?? 1), +(limit ?? 20));
+    return this.placeService.getReviews(id, +(page ?? 1), +(limit ?? 20), req.user?.id);
   }
 
   @Post(':id/reviews')
@@ -136,6 +138,28 @@ export class PlaceController {
   @ApiBearerAuth()
   addReview(@Req() req: any, @Param('id') id: string, @Body() body: AddReviewDto) {
     return this.placeService.addReview(req.user.id, id, body.rating, body.body);
+  }
+
+  @Post(':id/reviews/:reviewId/like')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  likeReview(
+    @Req() req: any,
+    @Param('id') _placeId: string,
+    @Param('reviewId') reviewId: string,
+  ) {
+    return this.placeService.likeReview(req.user.id, reviewId);
+  }
+
+  @Delete(':id/reviews/:reviewId/like')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  unlikeReview(
+    @Req() req: any,
+    @Param('id') _placeId: string,
+    @Param('reviewId') reviewId: string,
+  ) {
+    return this.placeService.unlikeReview(req.user.id, reviewId);
   }
 
   // AI 리뷰 요약 (프리미엄 전용)

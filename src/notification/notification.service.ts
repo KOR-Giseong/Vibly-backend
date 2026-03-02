@@ -143,4 +143,66 @@ export class NotificationService {
       .deleteMany({ where: { id, userId } })
       .catch(() => {});
   }
+
+  // ── 전체 사용자 브로드캐스트 (관리자 전용) ────────────────────────────────
+  async broadcast(
+    adminId: string,
+    title: string,
+    body: string,
+  ): Promise<{ sent: number }> {
+    // 관리자 확인
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      select: { isAdmin: true },
+    });
+    if (!admin?.isAdmin) throw new Error('관리자만 전송할 수 있어요.');
+
+    // 모든 사용자에게 DB 알림 생성 + 푸시 토큰 수집
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null, status: 'ACTIVE' },
+      select: { id: true },
+    });
+
+    // DB 알림 일괄 생성
+    await this.prisma.notification.createMany({
+      data: users.map((u) => ({
+        userId: u.id,
+        type: 'PROMO' as const,
+        title,
+        body,
+        payload: {},
+      })),
+      skipDuplicates: true,
+    });
+
+    // 푸시 토큰 수집 후 발송
+    const devices = await this.prisma.device.findMany({
+      select: { pushToken: true },
+    });
+
+    const messages: import('expo-server-sdk').ExpoPushMessage[] = devices
+      .filter((d) => Expo.isExpoPushToken(d.pushToken))
+      .map((d) => ({
+        to: d.pushToken,
+        sound: 'default' as const,
+        title,
+        body,
+        data: {},
+        badge: 1,
+        channelId: 'default',
+      }));
+
+    if (messages.length) {
+      const chunks = expo.chunkPushNotifications(messages);
+      for (const chunk of chunks) {
+        expo
+          .sendPushNotificationsAsync(chunk)
+          .catch((e: unknown) =>
+            this.logger.error(`broadcast push failed: ${String(e)}`),
+          );
+      }
+    }
+
+    return { sent: users.length };
+  }
 }

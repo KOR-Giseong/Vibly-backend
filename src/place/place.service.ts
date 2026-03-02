@@ -9,6 +9,7 @@ import type { Place } from './types/kakao.types';
 import { OcrService } from '../ocr/ocr.service';
 import { ReceiptMatcherService } from '../ocr/receipt-matcher.service';
 import { CreditService, CREDIT_REWARDS, CreditTxType } from '../credit/credit.service';
+import { NotificationService } from '../notification/notification.service';
 
 // 카테고리별 폴백 이미지 (카카오 검색 결과와 동일하게 Unsplash 고정 사진)
 const CATEGORY_IMAGE: Record<string, string> = {
@@ -43,6 +44,7 @@ export class PlaceService {
     private ocr: OcrService,
     private receiptMatcher: ReceiptMatcherService,
     private creditService: CreditService,
+    private notificationService: NotificationService,
   ) {}
 
   // ── 주변 장소 (카카오에서 바로 호출, DB 저장 없이 반환) ──────────────────
@@ -342,19 +344,74 @@ export class PlaceService {
   }
 
   // ── 리뷰 전체 목록 (페이지네이션) ──────────────────────────────────────────
-  async getReviews(placeId: string, page = 1, limit = 20) {
+  async getReviews(placeId: string, page = 1, limit = 20, userId?: string) {
     const skip = (page - 1) * limit;
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
         where: { placeId },
-        include: { user: { select: { id: true, name: true } } },
+        include: {
+          user: { select: { id: true, name: true } },
+          _count: { select: { likes: true } },
+          ...(userId
+            ? { likes: { where: { userId }, select: { id: true } } }
+            : {}),
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
       this.prisma.review.count({ where: { placeId } }),
     ]);
-    return { reviews, total, page, hasNext: skip + reviews.length < total };
+
+    const mapped = reviews.map((r: any) => ({
+      id: r.id,
+      user: r.user,
+      rating: r.rating,
+      body: r.body,
+      createdAt: r.createdAt,
+      likesCount: r._count.likes,
+      isLiked: userId ? (r.likes?.length ?? 0) > 0 : false,
+    }));
+
+    return { reviews: mapped, total, page, hasNext: skip + reviews.length < total };
+  }
+
+  // ── 리뷰 좋아요 ──────────────────────────────────────────────────────────
+  async likeReview(userId: string, reviewId: string) {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+      select: { id: true, userId: true },
+    });
+    if (!review) throw new Error('리뷰를 찾을 수 없어요.');
+
+    await this.prisma.reviewLike.upsert({
+      where: { userId_reviewId: { userId, reviewId } },
+      create: { userId, reviewId },
+      update: {},
+    });
+
+    // 자신의 리뷰에 첨다른 사람이 좋아요 누르면 알림
+    if (review.userId !== userId) {
+      void this.notificationService.send(
+        review.userId,
+        'LIKE',
+        '리뷰 좋아요',
+        '누군가 회원님의 리뷰를 좋아해요! ♥',
+        { reviewId },
+      ).catch(() => {});
+    }
+
+    const count = await this.prisma.reviewLike.count({ where: { reviewId } });
+    return { likesCount: count };
+  }
+
+  // ── 리뷰 좋아요 취소 ─────────────────────────────────────────────────────
+  async unlikeReview(userId: string, reviewId: string) {
+    await this.prisma.reviewLike
+      .deleteMany({ where: { userId, reviewId } })
+      .catch(() => {});
+    const count = await this.prisma.reviewLike.count({ where: { reviewId } });
+    return { likesCount: count };
   }
 
   // ── 체크인 (영수증 OCR 필수) ───────────────────────────────────────────────

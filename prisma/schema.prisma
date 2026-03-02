@@ -152,6 +152,7 @@ model User {
   receivedInvitations CoupleInvitation[]  @relation("ReceivedInvitations")
   sentUserReports     UserReport[]        @relation("SentUserReports")
   receivedUserReports UserReport[]        @relation("ReceivedUserReports")
+  reviewLikes         ReviewLike[]
 
   @@index([email])
 }
@@ -299,10 +300,24 @@ model Review {
   body      String
   createdAt DateTime @default(now())
 
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  place Place        @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  likes ReviewLike[]
 
   @@unique([userId, placeId])
+}
+
+model ReviewLike {
+  id        String   @id @default(uuid())
+  userId    String
+  reviewId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reviewId])
+  @@index([reviewId])
 }
 
 model Bookmark {
