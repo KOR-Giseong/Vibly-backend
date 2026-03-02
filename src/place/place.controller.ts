@@ -137,4 +137,20 @@ export class PlaceController {
   addReview(@Req() req: any, @Param('id') id: string, @Body() body: AddReviewDto) {
     return this.placeService.addReview(req.user.id, id, body.rating, body.body);
   }
+
+  // AI 리뷰 요약 (프리미엄 전용)
+  @Get(':id/review-summary')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  getReviewSummary(@Req() req: any, @Param('id') id: string) {
+    return this.placeService.getReviewSummary(id, req.user.id);
+  }
+
+  // 실시간 상황 기반 추천 (프리미엄 전용)
+  @Post('smart-recommend')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  smartRecommend(@Req() req: any, @Body() body: { lat: number; lng: number }) {
+    return this.placeService.smartRecommend(req.user.id, body.lat, body.lng);
+  }
 }

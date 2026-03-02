@@ -815,6 +815,17 @@ ${placesListText}
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
+    // 무료 유저는 추억 사진 100장 제한
+    const subscribed = await this.creditService.isSubscribed(userId);
+    if (!subscribed) {
+      const count = await this.prisma.coupleMemory.count({
+        where: { coupleId: couple.id, uploaderId: userId },
+      });
+      if (count >= 100) {
+        throw new ForbiddenException('무료 플랜은 추억 사진을 100장까지 저장할 수 있어요. 프리미엄으로 업그레이드해보세요!');
+      }
+    }
+
     const fs = await import('fs/promises');
     const path = await import('path');
     // expo-image-picker는 data URI 없이 raw base64 반환 → PNG는 'iVBORw' 로 시작
@@ -1040,6 +1051,74 @@ ${placesListText}
       data: { readAt: new Date() },
     });
     return { updated: result.count };
+  }
+
+  // ── AI 대화형 데이트 비서 (프리미엄 + 커플 전용) ──────────────────────────────
+  async aiDateChat(
+    userId: string,
+    messages: Array<{ role: 'user' | 'model'; text: string }>,
+    lat?: number,
+    lng?: number,
+  ) {
+    // 프리미엄 체크
+    const subscribed = await this.creditService.isSubscribed(userId);
+    if (!subscribed) {
+      throw new ForbiddenException('AI 데이트 비서는 프리미엄 기능이에요. 구독 후 이용해주세요!');
+    }
+
+    // 커플 체크
+    const couple = await this.findMyCouple(userId);
+    if (!couple) throw new NotFoundException('커플 등록 후 이용할 수 있어요.');
+
+    const systemPrompt = `당신은 커플의 데이트를 도와주는 AI 비서입니다.
+한국어로 친근하고 따뜻하게 대화하세요.
+장소 추천이 필요하면 구체적인 장소 유형이나 키워드를 제안해주세요.
+응답은 200자 이내로 간결하게 해주세요.`;
+
+    // Gemini contents 형식으로 변환
+    const contents = [
+      { role: 'user', parts: [{ text: systemPrompt }] },
+      { role: 'model', parts: [{ text: '안녕하세요! 오늘 데이트 계획을 도와드릴게요 💕' }] },
+      ...messages.map((m) => ({
+        role: m.role,
+        parts: [{ text: m.text }],
+      })),
+    ];
+
+    let responseText = '죄송해요, 잠시 후 다시 시도해주세요.';
+    let places: any[] = [];
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            generationConfig: { temperature: 0.9, maxOutputTokens: 400 },
+          }),
+        },
+      );
+      const data = await res.json() as any;
+      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? responseText;
+
+      // 장소 추천 키워드 감지 → 카카오 검색
+      if (lat != null && lng != null && responseText.includes('추천')) {
+        const keywordMatch = responseText.match(/["「]([^"」]+)["」]/);
+        if (keywordMatch) {
+          try {
+            places = await this.kakao.searchByKeyword(keywordMatch[1], lat, lng, 1, 'distance', 3);
+          } catch {
+            // 카카오 검색 실패 무시
+          }
+        }
+      }
+    } catch (e) {
+      this.logger.error('AI 데이트 비서 오류', e);
+    }
+
+    return { text: responseText, places: places.length > 0 ? places : undefined };
   }
 
   private async assertAdmin(userId: string) {

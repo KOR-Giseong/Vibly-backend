@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
+import { AppConfigModule } from './config/app-config.module';
 import { AuthModule } from './auth/auth.module';
 import { PlaceModule } from './place/place.module';
 import { MoodModule } from './mood/mood.module';
@@ -20,6 +21,7 @@ import { CoupleModule } from './couple/couple.module';
       { name: 'auth',    ttl: 900_000, limit: 10  },
     ]),
     PrismaModule,
+    AppConfigModule,
     AuthModule,
     PlaceModule,
     MoodModule,

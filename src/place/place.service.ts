@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, UnprocessableEntityException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnprocessableEntityException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -880,5 +880,194 @@ export class PlaceService {
     }
 
     return reasons.slice(0, 3);
+  }
+
+  // ── 실시간 상황 기반 추천 (프리미엄 전용) ──────────────────────────────────────
+  async smartRecommend(userId: string, lat: number, lng: number) {
+    const subscribed = await this.creditService.isSubscribed(userId);
+    if (!subscribed) {
+      throw new ForbiddenException('실시간 추천은 프리미엄 기능이에요. 구독 후 이용해주세요!');
+    }
+
+    // 1. 날씨 조회 (wttr.in - 무료, API 키 불필요)
+    let weather = '맑음';
+    try {
+      const weatherRes = await fetch(`https://wttr.in/${lat},${lng}?format=%C+%t`, {
+        headers: { 'User-Agent': 'Vibly/1.0' },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (weatherRes.ok) {
+        weather = (await weatherRes.text()).trim().replace(/\+/g, '');
+      }
+    } catch {
+      this.logger.warn('날씨 API 호출 실패, 기본값 사용');
+    }
+
+    // 2. 시간대 계산 (KST)
+    const kstHour = new Date(Date.now() + 9 * 3600 * 1000).getUTCHours();
+    let timeOfDay: string;
+    if (kstHour >= 5 && kstHour < 12) timeOfDay = '아침';
+    else if (kstHour >= 12 && kstHour < 17) timeOfDay = '오후';
+    else if (kstHour >= 17 && kstHour < 22) timeOfDay = '저녁';
+    else timeOfDay = '심야';
+
+    const dayNames = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+    const dayOfWeek = dayNames[new Date().getDay()];
+
+    // 3. Gemini로 장소 키워드 추천
+    const prompt = `지금 ${dayOfWeek} ${timeOfDay}, 날씨는 "${weather}"입니다.
+이 상황에 어울리는 데이트 장소 카테고리 키워드 3개를 JSON으로 답하세요.
+형식: {"message": "한 줄 추천 멘트 (20자 이내)", "keywords": ["키워드1", "키워드2", "키워드3"]}`;
+
+    let keywords = ['카페', '공원', '맛집'];
+    let message = `${timeOfDay}에 어울리는 장소를 찾아봤어요`;
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.config.get('GEMINI_API_KEY')}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.8, maxOutputTokens: 200, responseMimeType: 'application/json' },
+          }),
+        },
+      );
+      const data = await res.json() as any;
+      const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.keywords)) keywords = parsed.keywords.slice(0, 3);
+        if (parsed.message) message = parsed.message;
+      }
+    } catch (e) {
+      this.logger.warn('스마트 추천 Gemini 오류, 폴백 키워드 사용', e);
+    }
+
+    // 4. 카카오 병렬 검색
+    const results = await Promise.all(
+      keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'distance', 5)),
+    );
+    const places = results.flatMap((r) => r.slice(0, 3)).slice(0, 9);
+
+    return { message, weather, timeOfDay, keywords, places };
+  }
+
+  // ── AI 리뷰 요약 (프리미엄 전용) ─────────────────────────────────────────────
+  async getReviewSummary(placeId: string, userId: string) {
+    // 프리미엄 체크
+    const subscribed = await this.creditService.isSubscribed(userId);
+    if (!subscribed) {
+      throw new ForbiddenException('AI 리뷰 요약은 프리미엄 기능이에요. 구독 후 이용해주세요!');
+    }
+
+    // 현재 리뷰 수 조회
+    const reviewCount = await this.prisma.review.count({ where: { placeId } });
+
+    // 캐시 확인 (리뷰 수가 동일하면 캐시 반환)
+    const cached = await this.prisma.placeReviewSummary.findUnique({ where: { placeId } });
+    if (cached && cached.reviewCount === reviewCount) {
+      return cached;
+    }
+
+    // 리뷰가 없으면 기본 응답
+    if (reviewCount === 0) {
+      return {
+        placeId,
+        summary: '아직 리뷰가 없어요. 첫 번째 리뷰를 남겨보세요!',
+        pros: [],
+        cons: [],
+        targetAudience: null,
+        reviewCount: 0,
+        generatedAt: new Date(),
+      };
+    }
+
+    // 최대 50개 리뷰 텍스트 조회
+    const reviews = await this.prisma.review.findMany({
+      where: { placeId },
+      select: { rating: true, body: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    const reviewTexts = reviews
+      .map((r) => `[${r.rating}점] ${r.body}`)
+      .join('\n');
+
+    // Gemini AI 요약 생성
+    const prompt = `다음은 한 장소에 대한 실제 리뷰 목록입니다. JSON 형식으로 분석해주세요.
+분석 형식:
+{
+  "summary": "한 줄 요약 (50자 이내)",
+  "pros": ["장점1", "장점2", "장점3"],
+  "cons": ["단점1", "단점2"],
+  "targetAudience": "이런 분께 추천 (20자 이내)"
+}
+
+리뷰:
+${reviewTexts}`;
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.config.get('GEMINI_API_KEY')}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 500,
+              responseMimeType: 'application/json',
+            },
+          }),
+        },
+      );
+
+      const data = await res.json() as any;
+      const text: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const result = await this.prisma.placeReviewSummary.upsert({
+          where: { placeId },
+          create: {
+            placeId,
+            summary: parsed.summary ?? '요약 정보 없음',
+            pros: parsed.pros ?? [],
+            cons: parsed.cons ?? [],
+            targetAudience: parsed.targetAudience ?? null,
+            reviewCount,
+          },
+          update: {
+            summary: parsed.summary ?? '요약 정보 없음',
+            pros: parsed.pros ?? [],
+            cons: parsed.cons ?? [],
+            targetAudience: parsed.targetAudience ?? null,
+            reviewCount,
+            generatedAt: new Date(),
+          },
+        });
+        return result;
+      }
+    } catch (e) {
+      this.logger.error('AI 리뷰 요약 오류', e);
+    }
+
+    // 폴백: 별점 기반 단순 요약
+    const avgRating = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
+    return {
+      placeId,
+      summary: avgRating >= 4 ? '방문자들의 평가가 좋은 곳이에요.' : '다양한 평가가 있는 곳이에요.',
+      pros: ['방문자 리뷰 기반 정보'],
+      cons: [],
+      targetAudience: null,
+      reviewCount,
+      generatedAt: new Date(),
+    };
   }
 }

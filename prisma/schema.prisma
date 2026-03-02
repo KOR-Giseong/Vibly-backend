@@ -42,6 +42,13 @@ enum SubscriptionPlatform {
   WEB
 }
 
+enum SubscriptionType {
+  MONTHLY
+  YEARLY
+  TRIAL
+  ADMIN_GRANT
+}
+
 enum EventType {
   SEARCH
   CLICK_PLACE
@@ -372,14 +379,16 @@ model Subscription {
   id          String               @id @default(uuid())
   userId      String
   platform    SubscriptionPlatform
-  receiptData String
-  productId   String
+  type        SubscriptionType     @default(MONTHLY)
+  receiptData String               @default("")
+  productId   String               @default("")
   expiresAt   DateTime
   createdAt   DateTime             @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, expiresAt])
 }
 
 model PartnerAd {
@@ -661,6 +670,26 @@ model CoupleMessage {
   couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
 
   @@index([coupleId, createdAt])
+}
+
+// ─── App Config (관리자 설정 key-value) ──────────────────────────────────────────
+
+model AppConfig {
+  key       String   @id  // FREE_TRIAL_ENABLED, FREE_TRIAL_DAYS, DISCOUNT_ENABLED, DISCOUNT_PCT
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Place Review Summary (AI 요약 캐시) ─────────────────────────────────────────
+
+model PlaceReviewSummary {
+  placeId        String   @id
+  summary        String
+  pros           String[]
+  cons           String[]
+  targetAudience String?
+  reviewCount    Int
+  generatedAt    DateTime @default(now())
 }
 
 // ─── Notice ───────────────────────────────────────────────────────────────────

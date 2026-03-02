@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { KakaoService } from '../place/kakao.service';
 import { GooglePlacesService } from '../place/google-places.service';
 import { PlaceService } from '../place/place.service';
+import { CreditService } from '../credit/credit.service';
 
 interface GeminiAnalysis {
   summary: string;   // AI 한 줄 요약
@@ -20,6 +21,7 @@ export class MoodService {
     private kakao: KakaoService,
     private googlePlaces: GooglePlacesService,
     private placeService: PlaceService,
+    private creditService: CreditService,
   ) {}
 
   async search(query: string, userId?: string, lat?: number, lng?: number, limit = 20, radius?: number) {
@@ -255,6 +257,14 @@ export class MoodService {
 
   // ── 바이브 리포트 ────────────────────────────────────────────────────────────
   async getVibeReport(userId: string, period: string) {
+    // 월간 리포트는 프리미엄 전용
+    if (period === 'monthly') {
+      const subscribed = await this.creditService.isSubscribed(userId);
+      if (!subscribed) {
+        throw new ForbiddenException('월간 바이브 리포트는 프리미엄 기능이에요. 구독 후 이용해주세요!');
+      }
+    }
+
     const now = new Date();
     let startDate: Date;
 

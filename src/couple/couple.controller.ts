@@ -246,4 +246,17 @@ export class CoupleController {
   markMessagesRead(@Req() req: any) {
     return this.coupleService.markMessagesRead(req.user.id);
   }
+
+  // AI 대화형 데이트 비서 (프리미엄 + 커플 전용)
+  @Post('date-plans/ai-chat')
+  aiDateChat(
+    @Req() req: any,
+    @Body() body: {
+      messages: Array<{ role: 'user' | 'model'; text: string }>;
+      lat?: number;
+      lng?: number;
+    },
+  ) {
+    return this.coupleService.aiDateChat(req.user.id, body.messages, body.lat, body.lng);
+  }
 }
