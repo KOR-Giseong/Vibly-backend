@@ -1,22 +1,30 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
-  private readonly resend: Resend;
   private readonly logger = new Logger(MailService.name);
-  private readonly from = 'Vibly <onboarding@resend.dev>';
+  private transporter: nodemailer.Transporter;
 
   constructor(private config: ConfigService) {
-    const apiKey = this.config.get<string>('RESEND_API_KEY') ?? 're_test';
-    this.resend = new Resend(apiKey);
+    // Gmail SMTP (현재 사용)
+    // 도메인 구매 후 Resend로 전환 시: from 주소를 noreply@vibly.app 으로 바꾸고
+    // nodemailer 대신 resend.emails.send() 호출로 교체하면 됨
+    this.transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: this.config.get<string>('GMAIL_USER'),
+        pass: this.config.get<string>('GMAIL_APP_PASSWORD'), // 앱 비밀번호 (16자리)
+      },
+    });
   }
 
   async sendVerificationCode(to: string, code: string): Promise<void> {
+    const from = this.config.get<string>('GMAIL_USER');
     try {
-      await this.resend.emails.send({
-        from: this.from,
+      await this.transporter.sendMail({
+        from: `Vibly <${from}>`,
         to,
         subject: '[Vibly] 이메일 인증 코드',
         html: `
@@ -41,7 +49,7 @@ export class MailService {
       });
     } catch (err) {
       this.logger.error('이메일 발송 실패', err);
-      // 발송 실패해도 서버 에러로 올리지 않음 (로그만)
     }
   }
 }
+

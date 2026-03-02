@@ -70,9 +70,8 @@ export declare class AuthService {
             anniversaryDate: Date | null;
             createdAt: Date;
         } | null;
-        id: string;
         name: string;
-        createdAt: Date;
+        id: string;
         email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
@@ -84,6 +83,7 @@ export declare class AuthService {
         suspendedUntil: Date | null;
         suspendReason: string | null;
         credits: number;
+        createdAt: Date;
     } | null>;
     checkNickname(nickname: string, userId: string): Promise<{
         available: boolean;
@@ -94,9 +94,8 @@ export declare class AuthService {
         gender?: string;
         preferredVibes?: string[];
     }): Promise<{
-        id: string;
         name: string;
-        createdAt: Date;
+        id: string;
         email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
@@ -104,6 +103,7 @@ export declare class AuthService {
         preferredVibes: string[];
         isProfileComplete: boolean;
         status: import("@prisma/client").$Enums.UserStatus;
+        createdAt: Date;
     }>;
     updateAvatar(userId: string, base64: string): Promise<{
         avatarUrl: string;
