@@ -8,16 +8,16 @@ export class MailService {
   private transporter: nodemailer.Transporter;
 
   constructor(private config: ConfigService) {
-    // Gmail SMTP (현재 사용)
-    // 도메인 구매 후 Resend로 전환 시: from 주소를 noreply@vibly.app 으로 바꾸고
-    // nodemailer 대신 resend.emails.send() 호출로 교체하면 됨
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
-      pool: true,        // 커넥션 풀 사용 → 매번 새로 연결하지 않음
+      host: 'smtp.gmail.com',
+      port: 587,          // Render는 465(SSL) 차단 → 587(STARTTLS) 사용
+      secure: false,       // STARTTLS
+      family: 4,           // IPv4 강제 (Render IPv6 미지원)
+      pool: true,
       maxConnections: 3,
       auth: {
         user: this.config.get<string>('GMAIL_USER'),
-        pass: this.config.get<string>('GMAIL_APP_PASSWORD'), // 앱 비밀번호 (16자리)
+        pass: this.config.get<string>('GMAIL_APP_PASSWORD'),
       },
     });
 
