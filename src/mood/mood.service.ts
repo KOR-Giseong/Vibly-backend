@@ -28,8 +28,9 @@ export class MoodService {
     // 프리미엄 여부에 따라 limit/radius 상한선 적용
     const subscribed = userId ? await this.creditService.isSubscribed(userId) : false;
 
-    // 무료: limit ≤ 30, radius ≤ 3000m / 프리미엄: limit ≤ 50, radius ≤ 10000m
-    const maxLimit  = subscribed ? 50    : 30;
+    // 무료: limit ≤ 15, radius ≤ 3000m / 프리미엄: limit ≤ 15, radius ≤ 10000m
+    // 카카오 API size 최대 15 → 여러 키워드 병렬 호출로 보완
+    const maxLimit  = 15;
     const maxRadius = subscribed ? 10000 : 3000;
     const safeLimit  = Math.min(limit ?? 20, maxLimit);
     const safeRadius = radius != null ? Math.min(radius, maxRadius) : undefined;

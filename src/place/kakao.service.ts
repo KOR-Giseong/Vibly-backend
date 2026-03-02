@@ -107,7 +107,7 @@ export class KakaoService {
       const params: Record<string, unknown> = {
         query,
         page,
-        size: Math.min(45, Math.max(1, limit)), // 카카오 keyword API 최대 45
+        size: Math.min(15, Math.max(1, limit)), // 카카오 keyword API 최대 15
       };
       if (lat != null && lng != null) {
         params.x = lng;
