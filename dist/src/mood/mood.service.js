@@ -36,7 +36,7 @@ let MoodService = MoodService_1 = class MoodService {
     }
     async search(query, userId, lat, lng, limit = 20, radius) {
         const subscribed = userId ? await this.creditService.isSubscribed(userId) : false;
-        const maxLimit = subscribed ? 50 : 30;
+        const maxLimit = 15;
         const maxRadius = subscribed ? 10000 : 3000;
         const safeLimit = Math.min(limit ?? 20, maxLimit);
         const safeRadius = radius != null ? Math.min(radius, maxRadius) : undefined;

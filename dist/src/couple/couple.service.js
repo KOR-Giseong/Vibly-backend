@@ -453,7 +453,10 @@ ${context}
             const parts1 = raw.candidates?.[0]?.content?.parts ?? [];
             const text = (parts1.find((p) => !p.thought && p.text) ?? parts1[0])?.text ?? '';
             this.logger.log(`[AI날짜] 키워드 추출 응답(앞80): ${text.slice(0, 80)}`);
-            const parsed = JSON.parse(text);
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch)
+                throw new Error('No JSON in response');
+            const parsed = JSON.parse(jsonMatch[0]);
             if (parsed.region && Array.isArray(parsed.keywords) && parsed.keywords.length > 0) {
                 const finalRegion = forcedRegion ?? parsed.region;
                 this.logger.log(`[AI날짜] 키워드 추출 성공 → 지역: ${finalRegion}${forcedRegion ? ' (강제지정)' : ''}, 키워드: ${parsed.keywords.join(', ')}`);

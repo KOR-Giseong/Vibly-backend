@@ -15,9 +15,6 @@ export declare class AuthController {
     emailLogin(dto: EmailLoginDto): Promise<{
         accessToken: string;
         refreshToken: string;
-    } | {
-        requireVerification: boolean;
-        email: string;
     }>;
     verifyEmail(dto: EmailVerifyDto): Promise<{
         accessToken: string;

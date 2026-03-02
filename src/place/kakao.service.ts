@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import type { Place } from './types/kakao.types';
 
 // 카카오 카테고리 코드 → 우리 카테고리 매핑
@@ -81,16 +79,24 @@ interface KakaoSearchResponse {
 export class KakaoService {
   private readonly logger = new Logger(KakaoService.name);
   private readonly baseUrl = 'https://dapi.kakao.com/v2/local/search';
+  private readonly apiKey: string;
 
-  constructor(
-    private http: HttpService,
-    private config: ConfigService,
-  ) {}
+  constructor(private config: ConfigService) {
+    this.apiKey = config.get<string>('KAKAO_REST_API_KEY') ?? '';
+  }
 
-  private get headers() {
-    return {
-      Authorization: `KakaoAK ${this.config.get<string>('KAKAO_REST_API_KEY') ?? ''}`,
-    };
+  // ── native fetch helper (ERR_CANCELED 없음) ─────────────────────────────────
+  private async kakaoFetch<T>(path: string, params: Record<string, unknown>): Promise<T> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null) url.searchParams.set(k, String(v));
+    }
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `KakaoAK ${this.apiKey}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`Kakao API ${res.status}`);
+    return res.json() as Promise<T>;
   }
 
   // ── 키워드 검색 ─────────────────────────────────────────────────────────────
@@ -116,13 +122,7 @@ export class KakaoService {
         if (radiusM != null) params.radius = radiusM;
       }
 
-      const { data } = await firstValueFrom(
-        this.http.get<KakaoSearchResponse>(`${this.baseUrl}/keyword.json`, {
-          headers: this.headers,
-          params,
-        }),
-      );
-
+      const data = await this.kakaoFetch<KakaoSearchResponse>('/keyword.json', params);
       return data.documents.slice(0, limit).map((doc) => this.toPlace(doc));
     } catch (err) {
       this.logger.error('카카오 키워드 검색 실패', err);
@@ -148,40 +148,30 @@ export class KakaoService {
     // ① 카카오 카테고리 코드가 있는 장소 → category.json API
     const categoryResults = await Promise.allSettled(
       categoryCodes.map((code) =>
-        firstValueFrom(
-          this.http.get<KakaoSearchResponse>(`${this.baseUrl}/category.json`, {
-            headers: this.headers,
-            params: {
-              category_group_code: code,
-              x: lng,
-              y: lat,
-              radius: radiusM,
-              sort: 'distance',
-              size: catSize,
-              page,
-            },
-          }),
-        ).then((res) => res.data.documents.map((doc) => this.toPlace(doc))),
+        this.kakaoFetch<KakaoSearchResponse>('/category.json', {
+          category_group_code: code,
+          x: lng,
+          y: lat,
+          radius: radiusM,
+          sort: 'distance',
+          size: catSize,
+          page,
+        }).then((data) => data.documents.map((doc) => this.toPlace(doc))),
       ),
     );
 
     // ② 카카오 카테고리 코드가 없는 장소 → keyword.json API (위치 기반)
     const keywordResults = await Promise.allSettled(
       keywords.map((query) =>
-        firstValueFrom(
-          this.http.get<KakaoSearchResponse>(`${this.baseUrl}/keyword.json`, {
-            headers: this.headers,
-            params: {
-              query,
-              x: lng,
-              y: lat,
-              radius: radiusM,
-              sort: 'distance',
-              size: kwSize,
-              page,
-            },
-          }),
-        ).then((res) => res.data.documents.map((doc) => this.toPlace(doc))),
+        this.kakaoFetch<KakaoSearchResponse>('/keyword.json', {
+          query,
+          x: lng,
+          y: lat,
+          radius: radiusM,
+          sort: 'distance',
+          size: kwSize,
+          page,
+        }).then((data) => data.documents.map((doc) => this.toPlace(doc))),
       ),
     );
 

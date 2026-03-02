@@ -13,8 +13,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.KakaoService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
-const axios_1 = require("@nestjs/axios");
-const rxjs_1 = require("rxjs");
 const CATEGORY_MAP = {
     CE7: 'CAFE',
     FD6: 'RESTAURANT',
@@ -52,25 +50,34 @@ const CATEGORY_IMAGE = {
     ETC: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=400&q=80',
 };
 let KakaoService = KakaoService_1 = class KakaoService {
-    http;
     config;
     logger = new common_1.Logger(KakaoService_1.name);
     baseUrl = 'https://dapi.kakao.com/v2/local/search';
-    constructor(http, config) {
-        this.http = http;
+    apiKey;
+    constructor(config) {
         this.config = config;
+        this.apiKey = config.get('KAKAO_REST_API_KEY') ?? '';
     }
-    get headers() {
-        return {
-            Authorization: `KakaoAK ${this.config.get('KAKAO_REST_API_KEY') ?? ''}`,
-        };
+    async kakaoFetch(path, params) {
+        const url = new URL(`${this.baseUrl}${path}`);
+        for (const [k, v] of Object.entries(params)) {
+            if (v != null)
+                url.searchParams.set(k, String(v));
+        }
+        const res = await fetch(url.toString(), {
+            headers: { Authorization: `KakaoAK ${this.apiKey}` },
+            signal: AbortSignal.timeout(8000),
+        });
+        if (!res.ok)
+            throw new Error(`Kakao API ${res.status}`);
+        return res.json();
     }
     async searchByKeyword(query, lat, lng, page = 1, sort = 'distance', limit = 15, radiusM) {
         try {
             const params = {
                 query,
                 page,
-                size: Math.min(45, Math.max(1, limit)),
+                size: Math.min(15, Math.max(1, limit)),
             };
             if (lat != null && lng != null) {
                 params.x = lng;
@@ -79,10 +86,7 @@ let KakaoService = KakaoService_1 = class KakaoService {
                 if (radiusM != null)
                     params.radius = radiusM;
             }
-            const { data } = await (0, rxjs_1.firstValueFrom)(this.http.get(`${this.baseUrl}/keyword.json`, {
-                headers: this.headers,
-                params,
-            }));
+            const data = await this.kakaoFetch('/keyword.json', params);
             return data.documents.slice(0, limit).map((doc) => this.toPlace(doc));
         }
         catch (err) {
@@ -95,30 +99,24 @@ let KakaoService = KakaoService_1 = class KakaoService {
         const keywords = ['볼링장', '노래방', '찜질방', '방탈출', '오락실'];
         const catSize = Math.min(15, Math.max(1, Math.ceil(limit / categoryCodes.length) + 1));
         const kwSize = Math.min(15, Math.max(1, Math.ceil(limit / keywords.length)));
-        const categoryResults = await Promise.allSettled(categoryCodes.map((code) => (0, rxjs_1.firstValueFrom)(this.http.get(`${this.baseUrl}/category.json`, {
-            headers: this.headers,
-            params: {
-                category_group_code: code,
-                x: lng,
-                y: lat,
-                radius: radiusM,
-                sort: 'distance',
-                size: catSize,
-                page,
-            },
-        })).then((res) => res.data.documents.map((doc) => this.toPlace(doc)))));
-        const keywordResults = await Promise.allSettled(keywords.map((query) => (0, rxjs_1.firstValueFrom)(this.http.get(`${this.baseUrl}/keyword.json`, {
-            headers: this.headers,
-            params: {
-                query,
-                x: lng,
-                y: lat,
-                radius: radiusM,
-                sort: 'distance',
-                size: kwSize,
-                page,
-            },
-        })).then((res) => res.data.documents.map((doc) => this.toPlace(doc)))));
+        const categoryResults = await Promise.allSettled(categoryCodes.map((code) => this.kakaoFetch('/category.json', {
+            category_group_code: code,
+            x: lng,
+            y: lat,
+            radius: radiusM,
+            sort: 'distance',
+            size: catSize,
+            page,
+        }).then((data) => data.documents.map((doc) => this.toPlace(doc)))));
+        const keywordResults = await Promise.allSettled(keywords.map((query) => this.kakaoFetch('/keyword.json', {
+            query,
+            x: lng,
+            y: lat,
+            radius: radiusM,
+            sort: 'distance',
+            size: kwSize,
+            page,
+        }).then((data) => data.documents.map((doc) => this.toPlace(doc)))));
         const sets = [...categoryResults, ...keywordResults]
             .filter((r) => r.status === 'fulfilled')
             .map((r) => r.value);
@@ -197,7 +195,6 @@ let KakaoService = KakaoService_1 = class KakaoService {
 exports.KakaoService = KakaoService;
 exports.KakaoService = KakaoService = KakaoService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [axios_1.HttpService,
-        config_1.ConfigService])
+    __metadata("design:paramtypes", [config_1.ConfigService])
 ], KakaoService);
 //# sourceMappingURL=kakao.service.js.map

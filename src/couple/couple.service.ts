@@ -527,7 +527,10 @@ ${context}
       const parts1 = raw.candidates?.[0]?.content?.parts ?? [];
       const text = (parts1.find((p: any) => !p.thought && p.text) ?? parts1[0])?.text ?? '';
       this.logger.log(`[AI날짜] 키워드 추출 응답(앞80): ${text.slice(0, 80)}`);
-      const parsed = JSON.parse(text);
+      // 마크다운 코드블록 제거 후 파싱
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in response');
+      const parsed = JSON.parse(jsonMatch[0]);
       if (parsed.region && Array.isArray(parsed.keywords) && parsed.keywords.length > 0) {
         // forcedRegion이 있으면 Gemini 응답 region을 무시하고 강제 고정
         const finalRegion = forcedRegion ?? parsed.region;

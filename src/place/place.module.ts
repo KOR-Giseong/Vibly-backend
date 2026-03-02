@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { MulterModule } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { PlaceController } from './place.controller';
@@ -12,7 +11,6 @@ import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
-    HttpModule,
     OcrModule,
     CreditModule,
     NotificationModule,

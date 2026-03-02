@@ -149,10 +149,6 @@ let AuthService = class AuthService {
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid)
             throw new common_1.UnauthorizedException('비밀번호가 맞지 않아요.');
-        if (!user.emailVerified) {
-            await this.sendOtp(user.id, email);
-            return { requireVerification: true, email };
-        }
         return this.issueTokens(user.id);
     }
     async googleLogin(code, redirectUri) {

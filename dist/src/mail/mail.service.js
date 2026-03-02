@@ -54,11 +54,19 @@ let MailService = MailService_1 = class MailService {
     constructor(config) {
         this.config = config;
         this.transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            family: 4,
+            pool: true,
+            maxConnections: 3,
             auth: {
                 user: this.config.get('GMAIL_USER'),
                 pass: this.config.get('GMAIL_APP_PASSWORD'),
             },
+        });
+        this.transporter.verify().catch((err) => {
+            this.logger.warn(`Gmail SMTP 연결 확인 실패: ${err.message}`);
         });
     }
     async sendVerificationCode(to, code) {

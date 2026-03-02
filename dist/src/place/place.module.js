@@ -8,7 +8,6 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlaceModule = void 0;
 const common_1 = require("@nestjs/common");
-const axios_1 = require("@nestjs/axios");
 const platform_express_1 = require("@nestjs/platform-express");
 const multer_1 = require("multer");
 const place_controller_1 = require("./place.controller");
@@ -24,7 +23,6 @@ exports.PlaceModule = PlaceModule;
 exports.PlaceModule = PlaceModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            axios_1.HttpModule,
             ocr_module_1.OcrModule,
             credit_module_1.CreditModule,
             notification_module_1.NotificationModule,

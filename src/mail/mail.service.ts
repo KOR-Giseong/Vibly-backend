@@ -8,6 +8,7 @@ export class MailService {
   private transporter: nodemailer.Transporter;
 
   constructor(private config: ConfigService) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,          // Render는 465(SSL) 차단 → 587(STARTTLS) 사용
@@ -19,7 +20,7 @@ export class MailService {
         user: this.config.get<string>('GMAIL_USER'),
         pass: this.config.get<string>('GMAIL_APP_PASSWORD'),
       },
-    });
+    } as any);
 
     // 서버 시작 시 Gmail SMTP 미리 연결 (첫 발송 지연 방지)
     this.transporter.verify().catch((err) => {

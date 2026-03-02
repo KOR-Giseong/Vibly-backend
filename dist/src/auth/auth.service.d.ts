@@ -29,9 +29,6 @@ export declare class AuthService {
     emailLogin(email: string, password: string): Promise<{
         accessToken: string;
         refreshToken: string;
-    } | {
-        requireVerification: boolean;
-        email: string;
     }>;
     googleLogin(code: string, redirectUri: string): Promise<{
         accessToken: string;
