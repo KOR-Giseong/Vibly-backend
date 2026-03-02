@@ -13,10 +13,17 @@ export class MailService {
     // nodemailer 대신 resend.emails.send() 호출로 교체하면 됨
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
+      pool: true,        // 커넥션 풀 사용 → 매번 새로 연결하지 않음
+      maxConnections: 3,
       auth: {
         user: this.config.get<string>('GMAIL_USER'),
         pass: this.config.get<string>('GMAIL_APP_PASSWORD'), // 앱 비밀번호 (16자리)
       },
+    });
+
+    // 서버 시작 시 Gmail SMTP 미리 연결 (첫 발송 지연 방지)
+    this.transporter.verify().catch((err) => {
+      this.logger.warn(`Gmail SMTP 연결 확인 실패: ${err.message}`);
     });
   }
 
