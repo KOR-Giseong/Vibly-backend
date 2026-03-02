@@ -25,6 +25,15 @@ export class MoodService {
   ) {}
 
   async search(query: string, userId?: string, lat?: number, lng?: number, limit = 20, radius?: number) {
+    // 프리미엄 여부에 따라 limit/radius 상한선 적용
+    const subscribed = userId ? await this.creditService.isSubscribed(userId) : false;
+
+    // 무료: limit ≤ 30, radius ≤ 3000m / 프리미엄: limit ≤ 50, radius ≤ 10000m
+    const maxLimit  = subscribed ? 50    : 30;
+    const maxRadius = subscribed ? 10000 : 3000;
+    const safeLimit  = Math.min(limit ?? 20, maxLimit);
+    const safeRadius = radius != null ? Math.min(radius, maxRadius) : undefined;
+
     // 위치 없으면 서울 시청 기본값
     const searchLat = lat ?? 37.5665;
     const searchLng = lng ?? 126.9780;
@@ -37,7 +46,7 @@ export class MoodService {
     const analysis = quickMatch ?? (await this.analyzeWithGemini(query));
 
     // 3. 카카오 실제 장소 검색 (키워드별 병렬 호출)
-    const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng, limit, radius);
+    const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng, safeLimit, safeRadius);
 
     // 4. Google Places로 사진 + 평점 보완 (API 키 없으면 자동 생략)
     const enrichedResults = await this.googlePlaces.enrichPlaces(kakaoResults);
