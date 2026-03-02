@@ -124,8 +124,8 @@ export class AuthService {
       // Web: Web 클라이언트 ID + client_secret
       const isNative = Boolean(codeVerifier);
       const clientId = isNative
-        ? this.config.get('GOOGLE_IOS_CLIENT_ID')
-        : this.config.get('GOOGLE_CLIENT_ID');
+        ? (this.config.get('GOOGLE_IOS_CLIENT_ID') ?? '')
+        : (this.config.get('GOOGLE_CLIENT_ID') ?? '');
       const body: Record<string, string> = {
         code,
         client_id: clientId,
