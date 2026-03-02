@@ -111,7 +111,11 @@ export class PlaceService {
           images: true,
           tags: true,
           reviews: {
-            include: { user: { select: { id: true, name: true } } },
+            include: {
+              user: { select: { id: true, name: true } },
+              _count: { select: { likes: true } },
+              ...(userId ? { likes: { where: { userId }, select: { id: true } } } : {}),
+            },
             take: 10,
             orderBy: { createdAt: 'desc' },
           },
@@ -179,6 +183,15 @@ export class PlaceService {
       isBookmarked: !!myBookmark,
       myCheckInCount,
       myReview: myReview ?? null,
+      reviews: place.reviews.map((r: any) => ({
+        id: r.id,
+        user: r.user,
+        rating: r.rating,
+        body: r.body,
+        createdAt: r.createdAt,
+        likesCount: r._count?.likes ?? 0,
+        isLiked: userId ? (r.likes?.length ?? 0) > 0 : false,
+      })),
     };
   }
 
@@ -946,15 +959,30 @@ export class PlaceService {
       throw new ForbiddenException('실시간 추천은 프리미엄 기능이에요. 구독 후 이용해주세요!');
     }
 
-    // 1. 날씨 조회 (wttr.in - 무료, API 키 불필요)
+    // 1. 날씨 조회 (Open-Meteo - 무료, API 키 불필요, 더 안정적)
+    const WMO_CODES: Record<number, string> = {
+      0: '맑음', 1: '대체로 맑음', 2: '부분 흐림', 3: '흐림',
+      45: '안개', 48: '안개',
+      51: '이슬비', 53: '이슬비', 55: '강한 이슬비',
+      61: '비', 63: '비', 65: '강한 비',
+      71: '눈', 73: '눈', 75: '강한 눈',
+      77: '싸락눈',
+      80: '소나기', 81: '소나기', 82: '강한 소나기',
+      85: '눈 소나기', 86: '강한 눈 소나기',
+      95: '뇌우', 96: '뇌우', 99: '뇌우(우박)',
+    };
     let weather = '맑음';
     try {
-      const weatherRes = await fetch(`https://wttr.in/${lat},${lng}?format=%C+%t`, {
-        headers: { 'User-Agent': 'Vibly/1.0' },
-        signal: AbortSignal.timeout(3000),
-      });
+      const weatherRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`,
+        { signal: AbortSignal.timeout(5000) },
+      );
       if (weatherRes.ok) {
-        weather = (await weatherRes.text()).trim().replace(/\+/g, '');
+        const weatherData = await weatherRes.json() as { current_weather?: { weathercode: number; temperature: number } };
+        const code = weatherData.current_weather?.weathercode ?? -1;
+        const temp = Math.round(weatherData.current_weather?.temperature ?? 0);
+        const desc = WMO_CODES[code] ?? '흐림';
+        weather = `${desc} ${temp}°C`;
       }
     } catch {
       this.logger.warn('날씨 API 호출 실패, 기본값 사용');

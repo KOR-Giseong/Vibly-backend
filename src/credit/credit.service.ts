@@ -89,6 +89,22 @@ export class CreditService {
     return !!sub;
   }
 
+  // ── 사용자 구독 취소 (즉시 만료) ──────────────────────────────────────────
+  async cancelSubscription(userId: string) {
+    const sub = await this.prisma.subscription.findFirst({
+      where: { userId, expiresAt: { gt: new Date() } },
+    });
+    if (!sub) throw new NotFoundException('활성 구독이 없어요.');
+
+    await this.prisma.subscription.updateMany({
+      where: { userId, expiresAt: { gt: new Date() } },
+      data: { expiresAt: new Date() },
+    });
+
+    this.logger.log(`구독 취소 userId=${userId}`);
+    return { ok: true, message: '구독이 취소되었어요.' };
+  }
+
   // ── 크레딧 소모 (구독자는 차감 없이 통과) ─────────────────────────────────
   async spend(
     userId: string,

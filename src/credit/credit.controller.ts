@@ -59,6 +59,12 @@ export class CreditController {
     );
   }
 
+  // 구독 취소 (사용자 직접)
+  @Delete('subscription')
+  cancelSubscription(@Req() req: any) {
+    return this.creditService.cancelSubscription(req.user.id);
+  }
+
   // ── 어드민 ────────────────────────────────────────────────────────────────
 
   // 전체 유저 크레딧 목록
