@@ -116,11 +116,7 @@ export class AuthService {
     if (!user || !user.passwordHash) throw new NotFoundException('등록되지 않은 이메일이에요.');
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('비밀번호가 맞지 않아요.');
-    if (!user.emailVerified) {
-      // 로그인 시도 시 OTP 재발송
-      await this.sendOtp(user.id, email);
-      return { requireVerification: true, email };
-    }
+    // 로그인은 비밀번호만 맞으면 바로 토큰 발급 (OTP는 회원가입 시에만)
     return this.issueTokens(user.id);
   }
 
