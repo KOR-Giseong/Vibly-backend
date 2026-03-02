@@ -67,7 +67,8 @@ export class AuthService {
       where: { id: userId },
       data: { emailVerifyToken: code, emailVerifyTokenExpires: expires },
     });
-    await this.mail.sendVerificationCode(email, code);
+    // 이메일 발송은 fire-and-forget (응답 지연 방지)
+    this.mail.sendVerificationCode(email, code).catch(() => {});
   }
 
   async verifyEmailCode(email: string, code: string) {
