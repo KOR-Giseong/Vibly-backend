@@ -12,6 +12,7 @@ import { SupportModule } from './support/support.module';
 import { CommunityModule } from './community/community.module';
 import { CreditModule } from './credit/credit.module';
 import { CoupleModule } from './couple/couple.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { CoupleModule } from './couple/couple.module';
     CommunityModule,
     CreditModule,
     CoupleModule,
+    NotificationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // Rate Limiting 전역 적용

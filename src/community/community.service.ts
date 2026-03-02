@@ -9,6 +9,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { PostCategory } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
 
 const POST_SELECT = {
   id: true,
@@ -27,7 +28,10 @@ const POST_SELECT = {
 
 @Injectable()
 export class CommunityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   // ─── 게시글 ───────────────────────────────────────────────────────────────
 
@@ -138,7 +142,25 @@ export class CommunityService {
       await this.prisma.postLike.delete({ where: { id: existing.id } });
       return { liked: false };
     } else {
-      await this.prisma.postLike.create({ data: { postId, userId } });
+      const [, post] = await Promise.all([
+        this.prisma.postLike.create({ data: { postId, userId } }),
+        this.prisma.post.findUnique({
+          where: { id: postId },
+          select: { userId: true, title: true },
+        }),
+      ]);
+      // 글 작성자에게 알림 (자신의 글은 제외)
+      if (post && post.userId !== userId) {
+        this.notificationService
+          .send(
+            post.userId,
+            'LIKE',
+            '누군가 당신의 글을 좋아해요 ❤️',
+            `"${post.title}"에 좋아요를 눌렀어요`,
+            { postId },
+          )
+          .catch(() => {});
+      }
       return { liked: true };
     }
   }
@@ -146,21 +168,46 @@ export class CommunityService {
   // ─── 댓글 ─────────────────────────────────────────────────────────────────
 
   async addComment(postId: string, userId: string, dto: CreateCommentDto) {
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { userId: true, title: true, isHidden: true },
+    });
     if (!post || post.isHidden)
       throw new NotFoundException('게시글을 찾을 수 없습니다.');
 
-    return this.prisma.postComment.create({
-      data: { postId, userId, body: dto.body },
-      select: {
-        id: true,
-        body: true,
-        createdAt: true,
-        user: {
-          select: { id: true, nickname: true, name: true, avatarUrl: true },
+    const [comment, commenter] = await Promise.all([
+      this.prisma.postComment.create({
+        data: { postId, userId, body: dto.body },
+        select: {
+          id: true,
+          body: true,
+          createdAt: true,
+          user: {
+            select: { id: true, nickname: true, name: true, avatarUrl: true },
+          },
         },
-      },
-    });
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { nickname: true, name: true },
+      }),
+    ]);
+
+    // 글 작성자에게 알림 (자신의 글에 자신이 당 덕없는 경우 제외)
+    if (post.userId !== userId) {
+      const authorName = commenter?.nickname ?? commenter?.name ?? '누군가';
+      this.notificationService
+        .send(
+          post.userId,
+          'COMMENT',
+          `${authorName}님이 댓글을 달았어요 💬`,
+          `"${post.title}" 에 댓달: ${dto.body}`,
+          { postId },
+        )
+        .catch(() => {});
+    }
+
+    return comment;
   }
 
   async deleteComment(commentId: string, userId: string, isAdmin: boolean) {

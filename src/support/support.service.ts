@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 
 const FAQ_CATEGORIES = [
   {
@@ -47,7 +48,10 @@ const FAQ_CATEGORIES = [
 
 @Injectable()
 export class SupportService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationService: NotificationService,
+  ) {}
 
   getFaqCategories() {
     return FAQ_CATEGORIES;
@@ -200,6 +204,16 @@ export class SupportService {
         updatedAt: new Date(),
       },
     });
+    // 사용자에게 답변 알림
+    this.notificationService
+      .send(
+        ticket.userId,
+        'SUPPORT',
+        '투닝 답변이 도착했어요 📬',
+        `답변: ${body.length > 40 ? body.slice(0, 40) + '...' : body}`,
+        { ticketId },
+      )
+      .catch(() => {});
     return msg;
   }
 

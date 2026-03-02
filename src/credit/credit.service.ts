@@ -6,9 +6,38 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreditTxType, SubscriptionPlatform, SubscriptionType } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
+import {
+  CreditTxType,
+  SubscriptionPlatform,
+  SubscriptionType,
+} from '@prisma/client';
 import axios from 'axios';
 import * as crypto from 'crypto';
+
+// ── Apple 영수증 응답 타입 ─────────────────────────────────────────────────────
+interface AppleReceiptInfo {
+  product_id: string;
+  expires_date_ms: string;
+  [key: string]: unknown;
+}
+interface AppleVerifyResponse {
+  status: number;
+  latest_receipt_info?: AppleReceiptInfo[];
+}
+
+// ── Google Play 구독 응답 타입 ─────────────────────────────────────────────────
+interface GoogleSubscriptionPurchase {
+  paymentState: number;
+  expiryTimeMillis: string;
+  [key: string]: unknown;
+}
+
+// ── Google OAuth2 토큰 응답 타입 ───────────────────────────────────────────────
+interface GoogleTokenResponse {
+  access_token: string;
+  [key: string]: unknown;
+}
 
 // 다른 모듈에서 @prisma/client 직접 참조 대신 여기서 re-export
 export { CreditTxType, SubscriptionType, SubscriptionPlatform };
@@ -31,12 +60,20 @@ export const AD_DAILY_LIMIT = 5;
 export class CreditService {
   private readonly logger = new Logger(CreditService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationService: NotificationService,
+  ) {}
 
   // ── 잔액 조회 ──────────────────────────────────────────────────────────────
-  async getBalance(userId: string): Promise<{ credits: number; isPremium: boolean }> {
+  async getBalance(
+    userId: string,
+  ): Promise<{ credits: number; isPremium: boolean }> {
     const [user, activeSub] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId }, select: { credits: true } }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { credits: true },
+      }),
       this.prisma.subscription.findFirst({
         where: { userId, expiresAt: { gt: new Date() } },
       }),
@@ -84,7 +121,9 @@ export class CreditService {
       }),
     ]);
 
-    this.logger.log(`크레딧 소모 [${type}] userId=${userId} -${amount} → ${updated.credits}`);
+    this.logger.log(
+      `크레딧 소모 [${type}] userId=${userId} -${amount} → ${updated.credits}`,
+    );
     return updated.credits;
   }
 
@@ -106,12 +145,16 @@ export class CreditService {
       }),
     ]);
 
-    this.logger.log(`크레딧 획득 [${type}] userId=${userId} +${amount} → ${updated.credits}`);
+    this.logger.log(
+      `크레딧 획득 [${type}] userId=${userId} +${amount} → ${updated.credits}`,
+    );
     return updated.credits;
   }
 
   // ── 광고 시청 보상 (하루 5회 제한) ────────────────────────────────────────
-  async watchAd(userId: string): Promise<{ credits: number; earned: number; adWatchesToday: number }> {
+  async watchAd(
+    userId: string,
+  ): Promise<{ credits: number; earned: number; adWatchesToday: number }> {
     const today = this.todayKst();
 
     const watchCount = await this.prisma.adWatchLog.count({
@@ -183,7 +226,22 @@ export class CreditService {
     if (amount === 0) throw new BadRequestException('변경량이 0입니다.');
 
     if (amount > 0) {
-      const credits = await this.earn(userId, amount, CreditTxType.ADMIN_GRANT, adminId);
+      const credits = await this.earn(
+        userId,
+        amount,
+        CreditTxType.ADMIN_GRANT,
+        adminId,
+      );
+      // 크레딧 지급 알림
+      this.notificationService
+        .send(
+          userId,
+          'CREDIT',
+          '크레딧이 지급됐어요 🎁',
+          `리워드 크레딧 ${amount}개가 지급되었어요.`,
+          { amount, type: 'ADMIN_GRANT' },
+        )
+        .catch(() => {});
       return { credits };
     } else {
       // 음수: 강제 차감 (잔액 부족해도 0으로 클램프)
@@ -201,7 +259,12 @@ export class CreditService {
           select: { credits: true },
         }),
         this.prisma.creditTransaction.create({
-          data: { userId, amount: -deduct, type: CreditTxType.ADMIN_GRANT, referenceId: adminId },
+          data: {
+            userId,
+            amount: -deduct,
+            type: CreditTxType.ADMIN_GRANT,
+            referenceId: adminId,
+          },
         }),
       ]);
       return { credits: updated.credits };
@@ -214,7 +277,8 @@ export class CreditService {
       where: { id: userId },
       select: { isAdmin: true },
     });
-    if (!user?.isAdmin) throw new ForbiddenException('관리자만 접근할 수 있어요.');
+    if (!user?.isAdmin)
+      throw new ForbiddenException('관리자만 접근할 수 있어요.');
   }
 
   // ── 구독 관리 ──────────────────────────────────────────────────────────────
@@ -228,7 +292,15 @@ export class CreditService {
       this.prisma.subscription.findMany({
         where: { expiresAt: { gt: now } },
         include: {
-          user: { select: { id: true, name: true, nickname: true, email: true, avatarUrl: true } },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              nickname: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -266,7 +338,9 @@ export class CreditService {
         user: { select: { id: true, name: true, nickname: true, email: true } },
       },
     });
-    this.logger.log(`구독 부여 [ADMIN] userId=${userId} type=${type} durationDays=${durationDays}`);
+    this.logger.log(
+      `구독 부여 [ADMIN] userId=${userId} type=${type} durationDays=${durationDays}`,
+    );
     return sub;
   }
 
@@ -311,9 +385,18 @@ export class CreditService {
       : SubscriptionType.MONTHLY;
 
     const sub = await this.prisma.subscription.create({
-      data: { userId, platform, type, receiptData, productId: verifiedProductId, expiresAt },
+      data: {
+        userId,
+        platform,
+        type,
+        receiptData,
+        productId: verifiedProductId,
+        expiresAt,
+      },
     });
-    this.logger.log(`구독 검증 완료 [${platform}] userId=${userId} productId=${verifiedProductId} expiresAt=${expiresAt.toISOString()}`);
+    this.logger.log(
+      `구독 검증 완료 [${platform}] userId=${userId} productId=${verifiedProductId} expiresAt=${expiresAt.toISOString()}`,
+    );
     return { ...sub, isPremium: true };
   }
 
@@ -322,7 +405,8 @@ export class CreditService {
     receiptData: string,
   ): Promise<{ expiresAt: Date; productId: string }> {
     const sharedSecret = process.env.APPLE_SHARED_SECRET;
-    if (!sharedSecret) throw new BadRequestException('Apple 구독 설정이 올바르지 않아요.');
+    if (!sharedSecret)
+      throw new BadRequestException('Apple 구독 설정이 올바르지 않아요.');
 
     const payload = {
       'receipt-data': receiptData,
@@ -331,16 +415,26 @@ export class CreditService {
     };
 
     // 프로덕션 먼저 시도, 21007(샌드박스 영수증)이면 샌드박스로 재시도
-    let resp = await axios.post('https://buy.itunes.apple.com/verifyReceipt', payload, { timeout: 10000 });
+    let resp = await axios.post<AppleVerifyResponse>(
+      'https://buy.itunes.apple.com/verifyReceipt',
+      payload,
+      { timeout: 10000 },
+    );
     if (resp.data.status === 21007) {
-      resp = await axios.post('https://sandbox.itunes.apple.com/verifyReceipt', payload, { timeout: 10000 });
+      resp = await axios.post<AppleVerifyResponse>(
+        'https://sandbox.itunes.apple.com/verifyReceipt',
+        payload,
+        { timeout: 10000 },
+      );
     }
 
     if (resp.data.status !== 0) {
-      throw new BadRequestException(`Apple 영수증 검증 실패 (status: ${resp.data.status})`);
+      throw new BadRequestException(
+        `Apple 영수증 검증 실패 (status: ${resp.data.status})`,
+      );
     }
 
-    const latestInfos: any[] = resp.data.latest_receipt_info ?? [];
+    const latestInfos: AppleReceiptInfo[] = resp.data.latest_receipt_info ?? [];
     if (!latestInfos.length) {
       throw new BadRequestException('유효한 구독 정보를 찾을 수 없어요.');
     }
@@ -369,11 +463,14 @@ export class CreditService {
       throw new BadRequestException('Google Play 구독 설정이 올바르지 않아요.');
     }
 
-    const serviceAccount = JSON.parse(serviceAccountJson);
+    const serviceAccount = JSON.parse(serviceAccountJson) as {
+      client_email: string;
+      private_key: string;
+    };
     const accessToken = await this.getGoogleAccessToken(serviceAccount);
 
     const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/${productId}/tokens/${purchaseToken}`;
-    const { data } = await axios.get(url, {
+    const { data } = await axios.get<GoogleSubscriptionPurchase>(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
       timeout: 10000,
     });
@@ -397,7 +494,9 @@ export class CreditService {
     private_key: string;
   }): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
-    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+    const header = Buffer.from(
+      JSON.stringify({ alg: 'RS256', typ: 'JWT' }),
+    ).toString('base64url');
     const jwtPayload = Buffer.from(
       JSON.stringify({
         iss: serviceAccount.client_email,
@@ -414,7 +513,7 @@ export class CreditService {
     const signature = sign.sign(serviceAccount.private_key, 'base64url');
     const jwt = `${signingInput}.${signature}`;
 
-    const { data } = await axios.post(
+    const { data } = await axios.post<GoogleTokenResponse>(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',

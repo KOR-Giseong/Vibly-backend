@@ -78,6 +78,9 @@ enum NotificationType {
   REPORT
   COUPLE_INVITE
   COUPLE_ACCEPT
+  COMMENT      // 컴유니티 댓글
+  CREDIT       // 크레딧 지급
+  SUPPORT      // 지원 답변
 }
 
 enum CoupleStatus {
@@ -199,12 +202,12 @@ model ChatMessage {
 }
 
 model Device {
-  id        String   @id @default(uuid())
-  userId    String
-  fcmToken  String   @unique
-  platform  String
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  userId     String
+  pushToken  String   @unique
+  platform   String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RefreshToken {

@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditService } from '../credit/credit.service';
 import { KakaoService } from '../place/kakao.service';
+import { NotificationService } from '../notification/notification.service';
 
 const COUPLE_DATE_AI_COST = 15;
 const COUPLE_DATE_AI_REFINE_COST = 2;
@@ -21,6 +22,7 @@ export class CoupleService {
     private prisma: PrismaService,
     private creditService: CreditService,
     private kakao: KakaoService,
+    private notificationService: NotificationService,
   ) {}
 
   // ── 내부 헬퍼: 내 현재 활성 커플 조회 ──────────────────────────────────────
@@ -107,15 +109,15 @@ export class CoupleService {
       data: { senderId, receiverId, message },
     });
 
-    this.prisma.notification.create({
-      data: {
-        userId: receiverId,
-        type: 'COUPLE_INVITE',
-        title: '커플 초대가 도착했어요 💕',
-        body: `${sender?.nickname ?? sender?.name}님이 커플 등록을 요청했어요.`,
-        payload: { invitationId: invitation.id },
-      },
-    }).catch(() => {});
+    this.notificationService
+      .send(
+        receiverId,
+        'COUPLE_INVITE',
+        '커플 초대가 도착했어요 💕',
+        `${sender?.nickname ?? sender?.name}님이 커플 등록을 요청했어요.`,
+        { invitationId: invitation.id },
+      )
+      .catch(() => {});
 
     return invitation;
   }
@@ -179,15 +181,15 @@ export class CoupleService {
       where: { id: userId },
       select: { name: true, nickname: true },
     });
-    this.prisma.notification.create({
-      data: {
-        userId: invitation.senderId,
-        type: 'COUPLE_ACCEPT',
-        title: '커플이 됐어요! 💕',
-        body: `${receiver?.nickname ?? receiver?.name}님이 커플 요청을 수락했어요.`,
-        payload: { coupleId: couple.id },
-      },
-    }).catch(() => {});
+    this.notificationService
+      .send(
+        invitation.senderId,
+        'COUPLE_ACCEPT',
+        '커플이 됐어요! 💕',
+        `${receiver?.nickname ?? receiver?.name}님이 커플 요청을 수락했어요.`,
+        { coupleId: couple.id },
+      )
+      .catch(() => {});
 
     return { success: true, coupled: true, coupleId: couple.id };
   }
