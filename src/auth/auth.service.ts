@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthProvider } from '@prisma/client';
 import { CreditService } from '../credit/credit.service';
 import { R2Service } from '../storage/r2.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +21,7 @@ export class AuthService {
     private http: HttpService,
     private creditService: CreditService,
     private r2: R2Service,
+    private mail: MailService,
   ) {
     if (!config.get<string>('JWT_REFRESH_SECRET')) {
       throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
@@ -30,7 +32,14 @@ export class AuthService {
 
   async emailSignup(email: string, password: string, name: string) {
     const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) throw new ConflictException('이미 사용 중인 이메일이에요.');
+    if (existing) {
+      // 미인증 상태라면 코드 재발송
+      if (!existing.emailVerified) {
+        await this.sendOtp(existing.id, email);
+        return { requireVerification: true, email };
+      }
+      throw new ConflictException('이미 사용 중인 이메일이에요.');
+    }
 
     // 30일 재가입 제한 확인
     const deleted = await this.prisma.deletedAccount.findFirst({
@@ -43,11 +52,63 @@ export class AuthService {
 
     const hash = await bcrypt.hash(password, 12);
     const user = await this.prisma.user.create({
-      data: { email, name, provider: AuthProvider.EMAIL, passwordHash: hash },
+      data: { email, name, provider: AuthProvider.EMAIL, passwordHash: hash, emailVerified: false },
     });
-    // 가입 보너스 트랜잭션 기록 (DB 기본값 100 크레딧과 별개로 로그 남김)
+
+    await this.sendOtp(user.id, email);
+    return { requireVerification: true, email };
+  }
+
+  /** OTP 생성 후 DB 저장 & 이메일 발송 */
+  private async sendOtp(userId: string, email: string) {
+    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6자리
+    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10분
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { emailVerifyToken: code, emailVerifyTokenExpires: expires },
+    });
+    await this.mail.sendVerificationCode(email, code);
+  }
+
+  async verifyEmailCode(email: string, code: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new NotFoundException('등록되지 않은 이메일이에요.');
+    if (user.emailVerified) throw new BadRequestException('이미 인증된 이메일이에요.');
+
+    if (
+      !user.emailVerifyToken ||
+      !user.emailVerifyTokenExpires ||
+      user.emailVerifyToken !== code ||
+      user.emailVerifyTokenExpires < new Date()
+    ) {
+      throw new BadRequestException('인증 코드가 올바르지 않거나 만료됐어요.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true, emailVerifyToken: null, emailVerifyTokenExpires: null },
+    });
+
+    // 가입 보너스 (인증 완료 시점에 지급)
     this.creditService.grantSignupBonus(user.id).catch(() => {});
     return this.issueTokens(user.id);
+  }
+
+  async resendVerificationCode(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new NotFoundException('등록되지 않은 이메일이에요.');
+    if (user.emailVerified) throw new BadRequestException('이미 인증된 이메일이에요.');
+
+    // 마지막 발송 후 60초 이내 재요청 방지
+    if (user.emailVerifyTokenExpires) {
+      const resendAvailableAt = new Date(user.emailVerifyTokenExpires.getTime() - 9 * 60 * 1000);
+      if (new Date() < resendAvailableAt) {
+        throw new BadRequestException('잠시 후 다시 시도해 주세요. (60초 제한)');
+      }
+    }
+
+    await this.sendOtp(user.id, email);
+    return { message: '인증 코드를 재발송했어요.' };
   }
 
   async emailLogin(email: string, password: string) {
@@ -55,6 +116,11 @@ export class AuthService {
     if (!user || !user.passwordHash) throw new NotFoundException('등록되지 않은 이메일이에요.');
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('비밀번호가 맞지 않아요.');
+    if (!user.emailVerified) {
+      // 로그인 시도 시 OTP 재발송
+      await this.sendOtp(user.id, email);
+      return { requireVerification: true, email };
+    }
     return this.issueTokens(user.id);
   }
 
@@ -194,7 +260,7 @@ export class AuthService {
         }
       }
       user = await this.prisma.user.create({
-        data: { provider, providerId, email, name },
+        data: { provider, providerId, email, name, emailVerified: true },
       });
       // 가입 보너스 트랜잭션 기록
       this.creditService.grantSignupBonus(user.id).catch(() => {});

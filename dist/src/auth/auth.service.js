@@ -55,6 +55,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
 const credit_service_1 = require("../credit/credit.service");
 const r2_service_1 = require("../storage/r2.service");
+const mail_service_1 = require("../mail/mail.service");
 let AuthService = class AuthService {
     prisma;
     jwt;
@@ -62,21 +63,28 @@ let AuthService = class AuthService {
     http;
     creditService;
     r2;
-    constructor(prisma, jwt, config, http, creditService, r2) {
+    mail;
+    constructor(prisma, jwt, config, http, creditService, r2, mail) {
         this.prisma = prisma;
         this.jwt = jwt;
         this.config = config;
         this.http = http;
         this.creditService = creditService;
         this.r2 = r2;
+        this.mail = mail;
         if (!config.get('JWT_REFRESH_SECRET')) {
             throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
         }
     }
     async emailSignup(email, password, name) {
         const existing = await this.prisma.user.findUnique({ where: { email } });
-        if (existing)
+        if (existing) {
+            if (!existing.emailVerified) {
+                await this.sendOtp(existing.id, email);
+                return { requireVerification: true, email };
+            }
             throw new common_1.ConflictException('이미 사용 중인 이메일이에요.');
+        }
         const deleted = await this.prisma.deletedAccount.findFirst({
             where: { email, canRejoinAt: { gt: new Date() } },
         });
@@ -86,10 +94,53 @@ let AuthService = class AuthService {
         }
         const hash = await bcrypt.hash(password, 12);
         const user = await this.prisma.user.create({
-            data: { email, name, provider: client_1.AuthProvider.EMAIL, passwordHash: hash },
+            data: { email, name, provider: client_1.AuthProvider.EMAIL, passwordHash: hash, emailVerified: false },
+        });
+        await this.sendOtp(user.id, email);
+        return { requireVerification: true, email };
+    }
+    async sendOtp(userId, email) {
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const expires = new Date(Date.now() + 10 * 60 * 1000);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { emailVerifyToken: code, emailVerifyTokenExpires: expires },
+        });
+        await this.mail.sendVerificationCode(email, code);
+    }
+    async verifyEmailCode(email, code) {
+        const user = await this.prisma.user.findUnique({ where: { email } });
+        if (!user)
+            throw new common_1.NotFoundException('등록되지 않은 이메일이에요.');
+        if (user.emailVerified)
+            throw new common_1.BadRequestException('이미 인증된 이메일이에요.');
+        if (!user.emailVerifyToken ||
+            !user.emailVerifyTokenExpires ||
+            user.emailVerifyToken !== code ||
+            user.emailVerifyTokenExpires < new Date()) {
+            throw new common_1.BadRequestException('인증 코드가 올바르지 않거나 만료됐어요.');
+        }
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { emailVerified: true, emailVerifyToken: null, emailVerifyTokenExpires: null },
         });
         this.creditService.grantSignupBonus(user.id).catch(() => { });
         return this.issueTokens(user.id);
+    }
+    async resendVerificationCode(email) {
+        const user = await this.prisma.user.findUnique({ where: { email } });
+        if (!user)
+            throw new common_1.NotFoundException('등록되지 않은 이메일이에요.');
+        if (user.emailVerified)
+            throw new common_1.BadRequestException('이미 인증된 이메일이에요.');
+        if (user.emailVerifyTokenExpires) {
+            const resendAvailableAt = new Date(user.emailVerifyTokenExpires.getTime() - 9 * 60 * 1000);
+            if (new Date() < resendAvailableAt) {
+                throw new common_1.BadRequestException('잠시 후 다시 시도해 주세요. (60초 제한)');
+            }
+        }
+        await this.sendOtp(user.id, email);
+        return { message: '인증 코드를 재발송했어요.' };
     }
     async emailLogin(email, password) {
         const user = await this.prisma.user.findUnique({ where: { email } });
@@ -98,6 +149,10 @@ let AuthService = class AuthService {
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid)
             throw new common_1.UnauthorizedException('비밀번호가 맞지 않아요.');
+        if (!user.emailVerified) {
+            await this.sendOtp(user.id, email);
+            return { requireVerification: true, email };
+        }
         return this.issueTokens(user.id);
     }
     async googleLogin(code, redirectUri) {
@@ -189,7 +244,7 @@ let AuthService = class AuthService {
                 }
             }
             user = await this.prisma.user.create({
-                data: { provider, providerId, email, name },
+                data: { provider, providerId, email, name, emailVerified: true },
             });
             this.creditService.grantSignupBonus(user.id).catch(() => { });
         }
@@ -369,6 +424,7 @@ exports.AuthService = AuthService = __decorate([
         config_1.ConfigService,
         axios_1.HttpService,
         credit_service_1.CreditService,
-        r2_service_1.R2Service])
+        r2_service_1.R2Service,
+        mail_service_1.MailService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

@@ -21,37 +21,37 @@ export declare class SupportController {
         type?: 'FAQ' | 'CHAT';
     }): Promise<{
         id: string;
+        createdAt: Date;
+        status: import("@prisma/client").$Enums.TicketStatus;
         type: import("@prisma/client").$Enums.TicketType;
         title: string;
         body: string;
-        status: import("@prisma/client").$Enums.TicketStatus;
-        createdAt: Date;
     }>;
     getMyTickets(req: AuthRequest): Promise<{
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        status: import("@prisma/client").$Enums.TicketStatus;
         type: import("@prisma/client").$Enums.TicketType;
         title: string;
         body: string;
-        status: import("@prisma/client").$Enums.TicketStatus;
-        adminReply: string | null;
-        repliedAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
         messages: {
-            body: string;
             createdAt: Date;
             isAdmin: boolean;
+            body: string;
         }[];
+        adminReply: string | null;
+        repliedAt: Date | null;
     }[]>;
     getMessages(req: AuthRequest, id: string): Promise<{
         id: string;
-        body: string;
         createdAt: Date;
-        ticketId: string;
-        senderId: string;
         isAdmin: boolean;
+        body: string;
         imageUrl: string | null;
+        senderId: string;
         readAt: Date | null;
+        ticketId: string;
     }[]>;
     uploadImage(file: Express.Multer.File): Promise<{
         imageUrl: string;
@@ -61,13 +61,13 @@ export declare class SupportController {
         imageUrl?: string;
     }): Promise<{
         id: string;
-        body: string;
         createdAt: Date;
-        ticketId: string;
-        senderId: string;
         isAdmin: boolean;
+        body: string;
         imageUrl: string | null;
+        senderId: string;
         readAt: Date | null;
+        ticketId: string;
     }>;
     getAllTickets(req: AuthRequest): Promise<({
         user: {
@@ -78,90 +78,90 @@ export declare class SupportController {
             avatarUrl: string | null;
         };
         messages: {
-            body: string;
             createdAt: Date;
             isAdmin: boolean;
+            body: string;
             readAt: Date | null;
         }[];
     } & {
         id: string;
-        type: import("@prisma/client").$Enums.TicketType;
-        title: string;
-        body: string;
-        status: import("@prisma/client").$Enums.TicketStatus;
-        adminReply: string | null;
-        repliedAt: Date | null;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        status: import("@prisma/client").$Enums.TicketStatus;
+        type: import("@prisma/client").$Enums.TicketType;
+        title: string;
+        body: string;
+        adminReply: string | null;
+        repliedAt: Date | null;
     })[]>;
     getTicketMessages(req: AuthRequest, id: string): Promise<{
         id: string;
-        body: string;
         createdAt: Date;
-        ticketId: string;
-        senderId: string;
         isAdmin: boolean;
+        body: string;
         imageUrl: string | null;
+        senderId: string;
         readAt: Date | null;
+        ticketId: string;
     }[]>;
     adminSendMessage(req: AuthRequest, id: string, body: {
         body: string;
         imageUrl?: string;
     }): Promise<{
         id: string;
-        body: string;
         createdAt: Date;
-        ticketId: string;
-        senderId: string;
         isAdmin: boolean;
+        body: string;
         imageUrl: string | null;
+        senderId: string;
         readAt: Date | null;
+        ticketId: string;
     }>;
     replyTicket(req: AuthRequest, id: string, body: {
         reply: string;
     }): Promise<{
         id: string;
-        type: import("@prisma/client").$Enums.TicketType;
-        title: string;
-        body: string;
-        status: import("@prisma/client").$Enums.TicketStatus;
-        adminReply: string | null;
-        repliedAt: Date | null;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        status: import("@prisma/client").$Enums.TicketStatus;
+        type: import("@prisma/client").$Enums.TicketType;
+        title: string;
+        body: string;
+        adminReply: string | null;
+        repliedAt: Date | null;
     }>;
     updateTicketStatus(req: AuthRequest, id: string, body: {
         status: string;
     }): Promise<{
         id: string;
-        type: import("@prisma/client").$Enums.TicketType;
-        title: string;
-        body: string;
-        status: import("@prisma/client").$Enums.TicketStatus;
-        adminReply: string | null;
-        repliedAt: Date | null;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        status: import("@prisma/client").$Enums.TicketStatus;
+        type: import("@prisma/client").$Enums.TicketType;
+        title: string;
+        body: string;
+        adminReply: string | null;
+        repliedAt: Date | null;
     }>;
     getUsers(req: AuthRequest): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.UserStatus;
+        name: string;
         createdAt: Date;
         _count: {
-            bookmarks: number;
             checkIns: number;
+            bookmarks: number;
             reviews: number;
         };
-        name: string;
-        isAdmin: boolean;
         email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
         isProfileComplete: boolean;
         provider: import("@prisma/client").$Enums.AuthProvider;
+        status: import("@prisma/client").$Enums.UserStatus;
+        isAdmin: boolean;
         suspendedUntil: Date | null;
         suspendReason: string | null;
     }[]>;
@@ -170,15 +170,15 @@ export declare class SupportController {
         suspendedUntil: string;
     }): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.UserStatus;
         name: string;
+        status: import("@prisma/client").$Enums.UserStatus;
         suspendedUntil: Date | null;
         suspendReason: string | null;
     }>;
     unsuspendUser(req: AuthRequest, id: string): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.UserStatus;
         name: string;
+        status: import("@prisma/client").$Enums.UserStatus;
     }>;
     toggleAdmin(req: AuthRequest, id: string): Promise<{
         id: string;
@@ -205,31 +205,31 @@ export declare class SupportController {
         }[];
         popularPlaces: {
             id: string;
-            _count: {
-                bookmarks: number;
-                checkIns: number;
-            };
             name: string;
             category: import("@prisma/client").$Enums.PlaceCategory;
             rating: number;
             reviewCount: number;
+            _count: {
+                checkIns: number;
+                bookmarks: number;
+            };
         }[];
     }>;
     getAdminPlaces(req: AuthRequest): Promise<{
         id: string;
-        createdAt: Date;
-        _count: {
-            bookmarks: number;
-            checkIns: number;
-            reviews: number;
-        };
         name: string;
-        isActive: boolean;
         category: import("@prisma/client").$Enums.PlaceCategory;
         address: string;
         rating: number;
         reviewCount: number;
         vibeScore: number;
+        isActive: boolean;
+        createdAt: Date;
+        _count: {
+            checkIns: number;
+            bookmarks: number;
+            reviews: number;
+        };
     }[]>;
     togglePlaceActive(req: AuthRequest, id: string): Promise<{
         id: string;
@@ -241,25 +241,25 @@ export declare class SupportController {
         page: number;
         limit: number;
         items: ({
+            place: {
+                id: string;
+                name: string;
+                category: import("@prisma/client").$Enums.PlaceCategory;
+            };
             user: {
                 id: string;
                 name: string;
                 nickname: string | null;
                 avatarUrl: string | null;
             };
-            place: {
-                id: string;
-                name: string;
-                category: import("@prisma/client").$Enums.PlaceCategory;
-            };
         } & {
             id: string;
             createdAt: Date;
             userId: string;
-            imageUrl: string | null;
-            placeId: string;
-            mood: string;
             note: string | null;
+            placeId: string;
+            imageUrl: string | null;
+            mood: string;
             receiptVerified: boolean;
             receiptHash: string | null;
         })[];
@@ -272,24 +272,24 @@ export declare class SupportController {
         page: number;
         limit: number;
         items: ({
+            place: {
+                id: string;
+                name: string;
+                category: import("@prisma/client").$Enums.PlaceCategory;
+            };
             user: {
                 id: string;
                 name: string;
                 nickname: string | null;
                 avatarUrl: string | null;
             };
-            place: {
-                id: string;
-                name: string;
-                category: import("@prisma/client").$Enums.PlaceCategory;
-            };
         } & {
             id: string;
-            body: string;
+            rating: number;
             createdAt: Date;
             userId: string;
+            body: string;
             placeId: string;
-            rating: number;
         })[];
     }>;
     deleteAdminReview(req: AuthRequest, id: string): Promise<{

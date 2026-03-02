@@ -36,11 +36,11 @@ export declare class PlaceService {
                 tag: string;
             }[];
             images: {
-                url: string;
                 id: string;
                 createdAt: Date;
                 isPrimary: boolean;
                 placeId: string;
+                url: string;
             }[];
         } & {
             id: string;
@@ -76,11 +76,11 @@ export declare class PlaceService {
                 tag: string;
             }[];
             images: {
-                url: string;
                 id: string;
                 createdAt: Date;
                 isPrimary: boolean;
                 placeId: string;
+                url: string;
             }[];
         } & {
             id: string;
@@ -146,11 +146,11 @@ export declare class PlaceService {
             isLiked: boolean;
         }[];
         images: {
-            url: string;
             id: string;
             createdAt: Date;
             isPrimary: boolean;
             placeId: string;
+            url: string;
         }[];
         id: string;
         name: string;
@@ -223,8 +223,8 @@ export declare class PlaceService {
         createdAt: Date;
         userId: string;
         note: string | null;
-        imageUrl: string | null;
         placeId: string;
+        imageUrl: string | null;
         mood: string;
         receiptVerified: boolean;
         receiptHash: string | null;
@@ -235,8 +235,8 @@ export declare class PlaceService {
         createdAt: Date;
         userId: string;
         note: string | null;
-        imageUrl: string | null;
         placeId: string;
+        imageUrl: string | null;
         mood: string;
         receiptVerified: boolean;
         receiptHash: string | null;
@@ -275,11 +275,11 @@ export declare class PlaceService {
     }>;
     getReviewSummary(placeId: string, userId: string): Promise<{
         reviewCount: number;
-        targetAudience: string | null;
         placeId: string;
         summary: string;
         pros: string[];
         cons: string[];
+        targetAudience: string | null;
         generatedAt: Date;
     }>;
 }

@@ -122,6 +122,9 @@ model User {
   provider          AuthProvider
   providerId        String?
   passwordHash      String?
+  emailVerified          Boolean    @default(false)
+  emailVerifyToken       String?
+  emailVerifyTokenExpires DateTime?
   status            UserStatus @default(ACTIVE)
   isAdmin           Boolean    @default(false)
   suspendedUntil    DateTime?

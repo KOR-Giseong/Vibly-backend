@@ -4,6 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditService } from '../credit/credit.service';
 import { R2Service } from '../storage/r2.service';
+import { MailService } from '../mail/mail.service';
 export declare class AuthService {
     private prisma;
     private jwt;
@@ -11,14 +12,26 @@ export declare class AuthService {
     private http;
     private creditService;
     private r2;
-    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService, http: HttpService, creditService: CreditService, r2: R2Service);
+    private mail;
+    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService, http: HttpService, creditService: CreditService, r2: R2Service, mail: MailService);
     emailSignup(email: string, password: string, name: string): Promise<{
+        requireVerification: boolean;
+        email: string;
+    }>;
+    private sendOtp;
+    verifyEmailCode(email: string, code: string): Promise<{
         accessToken: string;
         refreshToken: string;
+    }>;
+    resendVerificationCode(email: string): Promise<{
+        message: string;
     }>;
     emailLogin(email: string, password: string): Promise<{
         accessToken: string;
         refreshToken: string;
+    } | {
+        requireVerification: boolean;
+        email: string;
     }>;
     googleLogin(code: string, redirectUri: string): Promise<{
         accessToken: string;
@@ -58,8 +71,9 @@ export declare class AuthService {
             createdAt: Date;
         } | null;
         id: string;
-        email: string | null;
         name: string;
+        createdAt: Date;
+        email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
@@ -70,7 +84,6 @@ export declare class AuthService {
         suspendedUntil: Date | null;
         suspendReason: string | null;
         credits: number;
-        createdAt: Date;
     } | null>;
     checkNickname(nickname: string, userId: string): Promise<{
         available: boolean;
@@ -82,15 +95,15 @@ export declare class AuthService {
         preferredVibes?: string[];
     }): Promise<{
         id: string;
-        email: string | null;
         name: string;
+        createdAt: Date;
+        email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
         preferredVibes: string[];
         isProfileComplete: boolean;
         status: import("@prisma/client").$Enums.UserStatus;
-        createdAt: Date;
     }>;
     updateAvatar(userId: string, base64: string): Promise<{
         avatarUrl: string;

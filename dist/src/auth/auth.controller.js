@@ -20,6 +20,7 @@ const auth_service_1 = require("./auth.service");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
 const email_signup_dto_1 = require("./dto/email-signup.dto");
 const email_login_dto_1 = require("./dto/email-login.dto");
+const email_verify_dto_1 = require("./dto/email-verify.dto");
 const social_login_dto_1 = require("./dto/social-login.dto");
 const refresh_token_dto_1 = require("./dto/refresh-token.dto");
 const update_profile_dto_1 = require("./dto/update-profile.dto");
@@ -33,6 +34,12 @@ let AuthController = class AuthController {
     }
     emailLogin(dto) {
         return this.authService.emailLogin(dto.email, dto.password);
+    }
+    verifyEmail(dto) {
+        return this.authService.verifyEmailCode(dto.email, dto.code);
+    }
+    resendVerification(email) {
+        return this.authService.resendVerificationCode(email);
     }
     googleLogin(dto) {
         return this.authService.googleLogin(dto.idToken, dto.redirectUri ?? '');
@@ -96,6 +103,22 @@ __decorate([
     __metadata("design:paramtypes", [email_login_dto_1.EmailLoginDto]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "emailLogin", null);
+__decorate([
+    (0, common_1.Post)('email/verify'),
+    (0, throttler_1.Throttle)({ auth: {} }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [email_verify_dto_1.EmailVerifyDto]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "verifyEmail", null);
+__decorate([
+    (0, common_1.Post)('email/resend'),
+    (0, throttler_1.Throttle)({ auth: {} }),
+    __param(0, (0, common_1.Body)('email')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "resendVerification", null);
 __decorate([
     (0, common_1.Post)('google'),
     (0, throttler_1.Throttle)({ auth: {} }),

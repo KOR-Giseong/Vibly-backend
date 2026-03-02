@@ -32,14 +32,14 @@ export declare class CoupleService {
         };
     } & {
         id: string;
-        user1Id: string;
-        user2Id: string;
+        createdAt: Date;
+        updatedAt: Date;
         status: import("@prisma/client").$Enums.CoupleStatus;
         creditShareEnabled: boolean;
         anniversaryDate: Date | null;
+        user1Id: string;
+        user2Id: string;
         dissolvedAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
     }) | null>;
     getMyCoupleInfo(userId: string): Promise<{
         coupleId: string;
@@ -52,20 +52,20 @@ export declare class CoupleService {
     } | null>;
     searchUserForInvite(query: string, requesterId: string): Promise<{
         id: string;
-        email: string | null;
         name: string;
+        email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
     }[]>;
     sendInvitation(senderId: string, receiverId: string, message?: string): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.InvitationStatus;
         createdAt: Date;
-        message: string | null;
-        respondedAt: Date | null;
+        status: import("@prisma/client").$Enums.InvitationStatus;
         senderId: string;
         receiverId: string;
+        message: string | null;
+        respondedAt: Date | null;
     }>;
     getReceivedInvitations(userId: string): Promise<({
         sender: {
@@ -76,12 +76,12 @@ export declare class CoupleService {
         };
     } & {
         id: string;
-        status: import("@prisma/client").$Enums.InvitationStatus;
         createdAt: Date;
-        message: string | null;
-        respondedAt: Date | null;
+        status: import("@prisma/client").$Enums.InvitationStatus;
         senderId: string;
         receiverId: string;
+        message: string | null;
+        respondedAt: Date | null;
     })[]>;
     getSentInvitations(userId: string): Promise<({
         receiver: {
@@ -92,12 +92,12 @@ export declare class CoupleService {
         };
     } & {
         id: string;
-        status: import("@prisma/client").$Enums.InvitationStatus;
         createdAt: Date;
-        message: string | null;
-        respondedAt: Date | null;
+        status: import("@prisma/client").$Enums.InvitationStatus;
         senderId: string;
         receiverId: string;
+        message: string | null;
+        respondedAt: Date | null;
     })[]>;
     respondToInvitation(invitationId: string, userId: string, accept: boolean): Promise<{
         success: boolean;
@@ -158,11 +158,11 @@ export declare class CoupleService {
     }>;
     getDatePlans(userId: string): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.DatePlanStatus;
         createdAt: Date;
         updatedAt: Date;
-        coupleId: string;
+        status: import("@prisma/client").$Enums.DatePlanStatus;
         title: string;
+        coupleId: string;
         dateAt: Date;
         memo: string | null;
         placeIds: string[];
@@ -174,11 +174,11 @@ export declare class CoupleService {
         placeIds?: string[];
     }): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.DatePlanStatus;
         createdAt: Date;
         updatedAt: Date;
-        coupleId: string;
+        status: import("@prisma/client").$Enums.DatePlanStatus;
         title: string;
+        coupleId: string;
         dateAt: Date;
         memo: string | null;
         placeIds: string[];
@@ -191,11 +191,11 @@ export declare class CoupleService {
         placeIds?: string[];
     }): Promise<{
         id: string;
-        status: import("@prisma/client").$Enums.DatePlanStatus;
         createdAt: Date;
         updatedAt: Date;
-        coupleId: string;
+        status: import("@prisma/client").$Enums.DatePlanStatus;
         title: string;
+        coupleId: string;
         dateAt: Date;
         memo: string | null;
         placeIds: string[];
@@ -229,8 +229,8 @@ export declare class CoupleService {
         id: string;
         createdAt: Date;
         coupleId: string;
-        uploaderId: string;
         imageUrl: string;
+        uploaderId: string;
         caption: string | null;
         takenAt: Date | null;
     }>;
@@ -242,34 +242,34 @@ export declare class CoupleService {
     }>;
     adminGetCouples(adminId: string, page?: number, limit?: number, status?: string): Promise<{
         items: ({
+            _count: {
+                datePlans: number;
+                memories: number;
+            };
             user1: {
                 id: string;
-                email: string | null;
                 name: string;
+                email: string | null;
                 nickname: string | null;
                 avatarUrl: string | null;
             };
             user2: {
                 id: string;
-                email: string | null;
                 name: string;
+                email: string | null;
                 nickname: string | null;
                 avatarUrl: string | null;
             };
-            _count: {
-                datePlans: number;
-                memories: number;
-            };
         } & {
             id: string;
-            user1Id: string;
-            user2Id: string;
+            createdAt: Date;
+            updatedAt: Date;
             status: import("@prisma/client").$Enums.CoupleStatus;
             creditShareEnabled: boolean;
             anniversaryDate: Date | null;
+            user1Id: string;
+            user2Id: string;
             dissolvedAt: Date | null;
-            createdAt: Date;
-            updatedAt: Date;
         })[];
         total: number;
         page: number;
@@ -325,12 +325,12 @@ export declare class CoupleService {
             imageUrl: string | null;
             id: string;
             createdAt: Date;
-            senderId: string;
-            coupleId: string;
             type: import("@prisma/client").$Enums.MessageType;
+            coupleId: string;
+            senderId: string;
+            readAt: Date | null;
             text: string | null;
             emoji: string | null;
-            readAt: Date | null;
         }[];
         total: number;
         page: number;
@@ -344,13 +344,13 @@ export declare class CoupleService {
     }): Promise<{
         id: string;
         createdAt: Date;
-        senderId: string;
-        coupleId: string;
         type: import("@prisma/client").$Enums.MessageType;
+        coupleId: string;
         imageUrl: string | null;
+        senderId: string;
+        readAt: Date | null;
         text: string | null;
         emoji: string | null;
-        readAt: Date | null;
     }>;
     markMessagesRead(userId: string): Promise<{
         updated: number;

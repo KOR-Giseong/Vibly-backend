@@ -230,8 +230,8 @@ export declare class SupportService {
             createdAt: Date;
             userId: string;
             note: string | null;
-            imageUrl: string | null;
             placeId: string;
+            imageUrl: string | null;
             mood: string;
             receiptVerified: boolean;
             receiptHash: string | null;

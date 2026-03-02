@@ -1,6 +1,7 @@
 import { AuthService } from './auth.service';
 import { EmailSignupDto } from './dto/email-signup.dto';
 import { EmailLoginDto } from './dto/email-login.dto';
+import { EmailVerifyDto } from './dto/email-verify.dto';
 import { SocialLoginDto } from './dto/social-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -8,12 +9,22 @@ export declare class AuthController {
     private authService;
     constructor(authService: AuthService);
     emailSignup(dto: EmailSignupDto): Promise<{
-        accessToken: string;
-        refreshToken: string;
+        requireVerification: boolean;
+        email: string;
     }>;
     emailLogin(dto: EmailLoginDto): Promise<{
         accessToken: string;
         refreshToken: string;
+    } | {
+        requireVerification: boolean;
+        email: string;
+    }>;
+    verifyEmail(dto: EmailVerifyDto): Promise<{
+        accessToken: string;
+        refreshToken: string;
+    }>;
+    resendVerification(email: string): Promise<{
+        message: string;
     }>;
     googleLogin(dto: SocialLoginDto): Promise<{
         accessToken: string;
@@ -44,8 +55,9 @@ export declare class AuthController {
             createdAt: Date;
         } | null;
         id: string;
-        email: string | null;
         name: string;
+        createdAt: Date;
+        email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
@@ -56,22 +68,21 @@ export declare class AuthController {
         suspendedUntil: Date | null;
         suspendReason: string | null;
         credits: number;
-        createdAt: Date;
     } | null>;
     checkNickname(req: any, nickname: string): Promise<{
         available: boolean;
     }>;
     updateProfile(req: any, dto: UpdateProfileDto): Promise<{
         id: string;
-        email: string | null;
         name: string;
+        createdAt: Date;
+        email: string | null;
         nickname: string | null;
         avatarUrl: string | null;
         gender: string | null;
         preferredVibes: string[];
         isProfileComplete: boolean;
         status: import("@prisma/client").$Enums.UserStatus;
-        createdAt: Date;
     }>;
     updateAvatar(req: any, body: {
         base64: string;
