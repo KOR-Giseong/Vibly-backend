@@ -33,11 +33,6 @@ export class AuthService {
   async emailSignup(email: string, password: string, name: string) {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      // 미인증 상태라면 코드 재발송
-      if (!existing.emailVerified) {
-        await this.sendOtp(existing.id, email);
-        return { requireVerification: true, email };
-      }
       throw new ConflictException('이미 사용 중인 이메일이에요.');
     }
 
@@ -52,11 +47,11 @@ export class AuthService {
 
     const hash = await bcrypt.hash(password, 12);
     const user = await this.prisma.user.create({
-      data: { email, name, provider: AuthProvider.EMAIL, passwordHash: hash, emailVerified: false },
+      data: { email, name, provider: AuthProvider.EMAIL, passwordHash: hash, emailVerified: true },
     });
 
-    await this.sendOtp(user.id, email);
-    return { requireVerification: true, email };
+    this.creditService.grantSignupBonus(user.id).catch(() => {});
+    return this.issueTokens(user.id);
   }
 
   /** OTP 생성 후 DB 저장 & 이메일 발송 */
