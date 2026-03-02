@@ -22,10 +22,6 @@ export class MailService {
       },
     } as any);
 
-    // 서버 시작 시 Gmail SMTP 미리 연결 (첫 발송 지연 방지)
-    this.transporter.verify().catch((err) => {
-      this.logger.warn(`Gmail SMTP 연결 확인 실패: ${err.message}`);
-    });
   }
 
   async sendVerificationCode(to: string, code: string): Promise<void> {
