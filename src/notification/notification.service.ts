@@ -149,6 +149,7 @@ export class NotificationService {
     adminId: string,
     title: string,
     body: string,
+    type: NotificationType = 'PROMO',
   ): Promise<{ sent: number }> {
     // 관리자 확인
     const admin = await this.prisma.user.findUnique({
@@ -167,7 +168,7 @@ export class NotificationService {
     await this.prisma.notification.createMany({
       data: users.map((u) => ({
         userId: u.id,
-        type: 'PROMO' as const,
+        type,
         title,
         body,
         payload: {},

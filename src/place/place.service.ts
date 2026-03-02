@@ -764,8 +764,9 @@ export class PlaceService {
     }
 
     // 2) DB에 없고 hint(name + coords)가 있으면 Kakao 키워드 검색으로 폴백
+    // distance 정렬 + 반경 없음 → 좌표 기준 가장 가까운 동명 장소 순으로 반환
     if (hint) {
-      const results = await this.kakao.searchByKeyword(hint.name, hint.lat, hint.lng, 1, 'distance');
+      const results = await this.kakao.searchByKeyword(hint.name, hint.lat, hint.lng, 1, 'distance', 15);
       const matched = results.find((p) => p.id === kakaoPlaceId);
       if (matched) return matched;
     }
@@ -1032,12 +1033,12 @@ export class PlaceService {
     }
 
     // 4. 카카오 병렬 검색
-    // nearby: 현재 위치 기준 distance 정렬 (30km 반경)
+    // nearby: 현재 위치 기준 distance 정렬 (20km 반경, Kakao 최대값)
     // wide: 위치 없이 "서울 {키워드}" accuracy 정렬 → 서울 전체 핫플 기준
     const results = await Promise.all(
       mode === 'wide'
         ? keywords.map((kw) => this.kakao.searchByKeyword(`서울 ${kw}`, undefined, undefined, 1, 'accuracy', 5))
-        : keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'distance', 5, 30000)),
+        : keywords.map((kw) => this.kakao.searchByKeyword(kw, lat, lng, 1, 'distance', 5, 20000)),
     );
     // 중복 ID 제거 후 최대 9개
     const seen = new Set<string>();
@@ -1049,6 +1050,9 @@ export class PlaceService {
         return true;
       })
       .slice(0, 9);
+
+    // 추천 장소를 백그라운드로 DB upsert → 탭 시 getById 안정적으로 동작
+    this.upsertKakaoPlaces(places).catch(() => {});
 
     return { message, weather, timeOfDay, keywords, places, mode };
   }

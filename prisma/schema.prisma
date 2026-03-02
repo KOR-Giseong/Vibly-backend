@@ -75,6 +75,7 @@ enum NotificationType {
   LIKE
   NEARBY
   PROMO
+  NOTICE       // 관리자 공지 알림
   REPORT
   COUPLE_INVITE
   COUPLE_ACCEPT

@@ -368,7 +368,11 @@ export class CreditService {
         'CREDIT',
         '프리미엄 멤버십이 활성화됐어요 👑',
         `관리자에 의해 프리미엄 계정으로 전환되었습니다!\n${durationText}동안 프리미엄 계정으로 사용하실 수 있습니다`,
-        { type: 'PREMIUM_GRANT', durationDays, expiresAt: expiresAt.toISOString() },
+        {
+          type: 'PREMIUM_GRANT',
+          durationDays,
+          expiresAt: expiresAt.toISOString(),
+        },
       )
       .catch(() => {});
 
@@ -385,7 +389,8 @@ export class CreditService {
     note?: string,
   ): Promise<{ count: number }> {
     await this.assertAdmin(adminId);
-    if (amount <= 0) throw new BadRequestException('지급 크레딧은 1 이상이어야 해요.');
+    if (amount <= 0)
+      throw new BadRequestException('지급 크레딧은 1 이상이어야 해요.');
 
     const users = await this.prisma.user.findMany({
       where: { status: 'ACTIVE', deletedAt: null },
@@ -434,23 +439,36 @@ export class CreditService {
       this.prisma.creditTransaction.findMany({
         where: { type: CreditTxType.ADMIN_GRANT },
         include: {
-          user: { select: { id: true, name: true, nickname: true, email: true, avatarUrl: true } },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              nickname: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
-      this.prisma.creditTransaction.count({ where: { type: CreditTxType.ADMIN_GRANT } }),
+      this.prisma.creditTransaction.count({
+        where: { type: CreditTxType.ADMIN_GRANT },
+      }),
     ]);
 
     // referenceId(adminId)로 관리자 정보 조회
-    const adminIds = [...new Set(items.map((i) => i.referenceId).filter(Boolean) as string[])];
-    const admins = adminIds.length > 0
-      ? await this.prisma.user.findMany({
-          where: { id: { in: adminIds } },
-          select: { id: true, name: true, nickname: true, email: true },
-        })
-      : [];
+    const adminIds = [
+      ...new Set(items.map((i) => i.referenceId).filter(Boolean) as string[]),
+    ];
+    const admins =
+      adminIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: adminIds } },
+            select: { id: true, name: true, nickname: true, email: true },
+          })
+        : [];
     const adminMap = new Map(admins.map((a) => [a.id, a]));
 
     return {
@@ -472,7 +490,15 @@ export class CreditService {
     const [items, total] = await Promise.all([
       this.prisma.subscription.findMany({
         include: {
-          user: { select: { id: true, name: true, nickname: true, email: true, avatarUrl: true } },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              nickname: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -482,13 +508,16 @@ export class CreditService {
     ]);
 
     // adminId로 관리자 정보 조회
-    const adminIds = [...new Set(items.map((s) => s.adminId).filter(Boolean) as string[])];
-    const admins = adminIds.length > 0
-      ? await this.prisma.user.findMany({
-          where: { id: { in: adminIds } },
-          select: { id: true, name: true, nickname: true, email: true },
-        })
-      : [];
+    const adminIds = [
+      ...new Set(items.map((s) => s.adminId).filter(Boolean) as string[]),
+    ];
+    const admins =
+      adminIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: adminIds } },
+            select: { id: true, name: true, nickname: true, email: true },
+          })
+        : [];
     const adminMap = new Map(admins.map((a) => [a.id, a]));
 
     return {

@@ -85,6 +85,6 @@ export class NotificationController {
     @Req() req: { user: { id: string } },
     @Body() body: { title: string; message: string },
   ) {
-    return this.notificationService.broadcast(req.user.id, body.title, body.message);
+    return this.notificationService.broadcast(req.user.id, body.title, body.message, 'NOTICE');
   }
 }
