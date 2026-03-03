@@ -124,27 +124,12 @@ export class AuthService {
 
   // ── Kakao Auth ─────────────────────────────────────────────────────────────
 
-  async kakaoLogin(code: string, redirectUri: string) {
+  async kakaoLogin(accessToken: string) {
     try {
-      // 1. 인가 코드 → 액세스 토큰 교환
-      const { data: tokenData } = await firstValueFrom(
-        this.http.post(
-          'https://kauth.kakao.com/oauth/token',
-          new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: this.config.get<string>('KAKAO_REST_API_KEY') ?? '',
-            client_secret: this.config.get<string>('KAKAO_CLIENT_SECRET') ?? '',
-            redirect_uri: redirectUri,
-            code,
-          }).toString(),
-          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-        ),
-      );
-
-      // 2. 액세스 토큰 → 사용자 정보
+      // 네이티브 SDK가 access_token을 직접 반환 → user/me 바로 호출
       const { data: userInfo } = await firstValueFrom(
         this.http.get('https://kapi.kakao.com/v2/user/me', {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         }),
       );
 

@@ -39,7 +39,7 @@ export class AuthController {
   @Post('kakao')
   @Throttle({ auth: {} })
   kakaoLogin(@Body() dto: SocialLoginDto) {
-    return this.authService.kakaoLogin(dto.idToken, dto.redirectUri ?? '');
+    return this.authService.kakaoLogin(dto.idToken);
   }
 
   @Post('apple')
