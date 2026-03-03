@@ -65,13 +65,11 @@ export class AuthService {
 
   async googleLogin(codeOrIdToken: string, redirectUri: string, codeVerifier?: string) {
     try {
-      let payload: { sub: string; email?: string; name?: string; given_name?: string };
+      let idTokenString: string;
 
       if (codeOrIdToken.startsWith('eyJ')) {
-        // 프론트에서 이미 교환된 id_token (JWT) — 디코딩만 수행
-        payload = JSON.parse(
-          Buffer.from(codeOrIdToken.split('.')[1], 'base64').toString(),
-        );
+        // 프론트에서 이미 교환된 id_token
+        idTokenString = codeOrIdToken;
       } else {
         // authorization code → 백엔드에서 교환 (Web 클라이언트 경로)
         const body: Record<string, string> = {
@@ -85,14 +83,19 @@ export class AuthService {
         const { data: tokenData } = await firstValueFrom(
           this.http.post('https://oauth2.googleapis.com/token', body),
         );
-        payload = JSON.parse(
-          Buffer.from(tokenData.id_token.split('.')[1], 'base64').toString(),
-        );
+        idTokenString = tokenData.id_token;
       }
+
+      // jwt.decode는 base64url을 올바르게 처리 (수동 Buffer 파싱 대비 안전)
+      const payload = jwt.decode(idTokenString) as { sub: string; email?: string; name?: string; given_name?: string } | null;
+      if (!payload?.sub) throw new BadRequestException('Google 로그인에 실패했어요.');
 
       const { sub, email, name, given_name } = payload;
       return this.upsertSocialUser(AuthProvider.GOOGLE, sub, email ?? null, name ?? given_name ?? 'Google 사용자');
-    } catch {
+    } catch (e) {
+      if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof UnauthorizedException) {
+        throw e;
+      }
       throw new BadRequestException('Google 로그인에 실패했어요.');
     }
   }
