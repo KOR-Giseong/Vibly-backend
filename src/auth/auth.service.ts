@@ -67,13 +67,16 @@ export class AuthService {
     try {
       let idTokenString: string;
 
-      if (codeOrIdToken.startsWith('eyJ')) {
+      const tokenInput = (codeOrIdToken ?? '').trim();
+      console.log('[Google Login] 수신 토큰 앞부분:', tokenInput.substring(0, 40), 'length:', tokenInput.length);
+
+      if (tokenInput.startsWith('eyJ')) {
         // 프론트에서 이미 교환된 id_token
-        idTokenString = codeOrIdToken;
+        idTokenString = tokenInput;
       } else {
         // authorization code → 백엔드에서 교환 (Web 클라이언트 경로)
         const body: Record<string, string> = {
-          code: codeOrIdToken,
+          code: tokenInput,
           client_id: this.config.get('GOOGLE_CLIENT_ID') ?? '',
           client_secret: this.config.get('GOOGLE_CLIENT_SECRET') ?? '',
           redirect_uri: redirectUri,
@@ -86,9 +89,27 @@ export class AuthService {
         idTokenString = tokenData.id_token;
       }
 
-      // jwt.decode는 base64url을 올바르게 처리 (수동 Buffer 파싱 대비 안전)
-      const payload = jwt.decode(idTokenString) as { sub: string; email?: string; name?: string; given_name?: string } | null;
-      if (!payload?.sub) throw new BadRequestException('Google 로그인에 실패했어요.');
+      // 1차: jwt.decode 시도
+      let payload = jwt.decode(idTokenString) as { sub: string; email?: string; name?: string; given_name?: string } | null;
+
+      // 2차: jwt.decode 실패 시 수동 base64url 디코딩
+      if (!payload) {
+        console.warn('[Google Login] jwt.decode 실패 - 수동 디코딩 시도');
+        try {
+          const parts = idTokenString.split('.');
+          if (parts.length !== 3) throw new Error(`JWT 파트 수 오류: ${parts.length}`);
+          const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          const padded = payloadBase64.padEnd(payloadBase64.length + (4 - payloadBase64.length % 4) % 4, '=');
+          payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+        } catch (decodeErr) {
+          console.error('[Google Login] 수동 디코딩도 실패:', decodeErr?.message);
+          throw new BadRequestException(`Google id_token 파싱 실패: ${decodeErr?.message}`);
+        }
+      }
+
+      console.log('[Google Login] 디코딩 결과 sub:', payload?.sub ?? 'MISSING', 'email:', payload?.email ?? 'none');
+
+      if (!payload?.sub) throw new BadRequestException('Google id_token에 사용자 ID(sub)가 없어요.');
 
       const { sub, email, name, given_name } = payload;
       return this.upsertSocialUser(AuthProvider.GOOGLE, sub, email ?? null, name ?? given_name ?? 'Google 사용자');
@@ -97,7 +118,7 @@ export class AuthService {
         throw e;
       }
       console.error('[Google Login] 예상치 못한 오류:', e?.constructor?.name, e?.message);
-      throw new BadRequestException(`Google 로그인 오류: ${e?.message ?? String(e)}`);
+      throw new BadRequestException(`Google 로그인 처리 오류: ${e?.message ?? String(e)}`);
     }
   }
 
