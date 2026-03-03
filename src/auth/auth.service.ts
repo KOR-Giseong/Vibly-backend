@@ -133,6 +133,7 @@ export class AuthService {
           new URLSearchParams({
             grant_type: 'authorization_code',
             client_id: this.config.get<string>('KAKAO_REST_API_KEY') ?? '',
+            client_secret: this.config.get<string>('KAKAO_CLIENT_SECRET') ?? '',
             redirect_uri: redirectUri,
             code,
           }).toString(),
