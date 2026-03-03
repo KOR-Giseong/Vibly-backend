@@ -728,3 +728,19 @@ model Notice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// ─── Admin Action Log ─────────────────────────────────────────────────────────
+
+model AdminLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  action     String   // e.g. SUSPEND_USER, ADJUST_CREDITS, GRANT_SUBSCRIPTION
+  targetType String?  // USER | POST | TICKET | SUBSCRIPTION | COUPLE | CREDIT
+  targetId   String?
+  detail     Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+}

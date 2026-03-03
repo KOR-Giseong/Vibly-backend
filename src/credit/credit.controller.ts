@@ -1,12 +1,12 @@
-import { Controller, Get, Post, Patch, Delete, Query, Body, Param, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Query, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard';
 import { CreditService, SubscriptionType, SubscriptionPlatform } from './credit.service';
 import { AppConfigService } from '../config/app-config.service';
 
 @ApiTags('Credit')
 @Controller('credits')
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class CreditController {
   constructor(
@@ -14,19 +14,21 @@ export class CreditController {
     private appConfigService: AppConfigService,
   ) {}
 
-  // 잔액 + 구독 여부 조회
+  // ── 사용자 ────────────────────────────────────────────────────────────────
+
+  @UseGuards(JwtAuthGuard)
   @Get('balance')
   getBalance(@Req() req: any) {
     return this.creditService.getBalance(req.user.id);
   }
 
-  // 광고 시청 보상
+  @UseGuards(JwtAuthGuard)
   @Post('watch-ad')
   watchAd(@Req() req: any) {
     return this.creditService.watchAd(req.user.id);
   }
 
-  // 오늘 광고 시청 횟수
+  @UseGuards(JwtAuthGuard)
   @Get('ad-watches-today')
   getAdWatchesToday(@Req() req: any) {
     return this.creditService.getAdWatchesToday(req.user.id).then((count) => ({
@@ -35,7 +37,7 @@ export class CreditController {
     }));
   }
 
-  // 크레딧 내역
+  @UseGuards(JwtAuthGuard)
   @Get('history')
   getHistory(
     @Req() req: any,
@@ -45,7 +47,7 @@ export class CreditController {
     return this.creditService.getHistory(req.user.id, +(page ?? 1), +(limit ?? 20));
   }
 
-  // 인앱결제 검증
+  @UseGuards(JwtAuthGuard)
   @Post('subscription/verify-purchase')
   verifyPurchase(
     @Req() req: any,
@@ -59,7 +61,7 @@ export class CreditController {
     );
   }
 
-  // 구독 취소 (사용자 직접)
+  @UseGuards(JwtAuthGuard)
   @Delete('subscription')
   cancelSubscription(@Req() req: any) {
     return this.creditService.cancelSubscription(req.user.id);
@@ -67,13 +69,13 @@ export class CreditController {
 
   // ── 어드민 ────────────────────────────────────────────────────────────────
 
-  // 전체 유저 크레딧 목록
+  @UseGuards(AdminJwtGuard)
   @Get('admin/users')
   adminGetUsers(@Req() req: any) {
     return this.creditService.adminGetUsersWithCredits(req.user.id);
   }
 
-  // 특정 유저 크레딧 지급/차감
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/users/:id/adjust')
   adminAdjust(
     @Req() req: any,
@@ -83,7 +85,7 @@ export class CreditController {
     return this.creditService.adminAdjustCredits(req.user.id, userId, body.amount);
   }
 
-  // 구독자 목록 (활성)
+  @UseGuards(AdminJwtGuard)
   @Get('admin/subscriptions')
   adminListSubscriptions(
     @Req() req: any,
@@ -93,7 +95,7 @@ export class CreditController {
     return this.creditService.adminListSubscriptions(req.user.id, +(page ?? 1), +(limit ?? 30));
   }
 
-  // 전체 구독 내역 (활성 + 만료 포함)
+  @UseGuards(AdminJwtGuard)
   @Get('admin/subscriptions/history')
   adminGetSubscriptionHistory(
     @Req() req: any,
@@ -103,7 +105,7 @@ export class CreditController {
     return this.creditService.adminGetAllSubscriptions(req.user.id, +(page ?? 1), +(limit ?? 30));
   }
 
-  // 크레딧 지급 내역 (ADMIN_GRANT)
+  @UseGuards(AdminJwtGuard)
   @Get('admin/credit-history')
   adminGetCreditHistory(
     @Req() req: any,
@@ -113,7 +115,7 @@ export class CreditController {
     return this.creditService.adminGetCreditGrantHistory(req.user.id, +(page ?? 1), +(limit ?? 30));
   }
 
-  // 전체 크레딧 지급 (이벤트성)
+  @UseGuards(AdminJwtGuard)
   @Post('admin/bulk-grant')
   adminBulkGrant(
     @Req() req: any,
@@ -122,7 +124,7 @@ export class CreditController {
     return this.creditService.adminBulkGrantCredits(req.user.id, body.amount, body.note);
   }
 
-  // 구독 부여
+  @UseGuards(AdminJwtGuard)
   @Post('admin/subscriptions')
   adminGrantSubscription(
     @Req() req: any,
@@ -136,26 +138,21 @@ export class CreditController {
     );
   }
 
-  // 구독 취소
+  @UseGuards(AdminJwtGuard)
   @Delete('admin/subscriptions/:userId')
   adminRevokeSubscription(@Req() req: any, @Param('userId') userId: string) {
     return this.creditService.adminRevokeSubscription(req.user.id, userId);
   }
 
-  // 앱 설정 전체 조회
+  @UseGuards(AdminJwtGuard)
   @Get('admin/app-config')
-  adminGetAppConfig(@Req() req: any) {
-    if (!req.user?.isAdmin) throw new ForbiddenException('관리자만 접근할 수 있어요.');
+  adminGetAppConfig() {
     return this.appConfigService.getAll();
   }
 
-  // 앱 설정 변경
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/app-config')
-  adminSetAppConfig(
-    @Req() req: any,
-    @Body() body: { key: string; value: string },
-  ) {
-    if (!req.user?.isAdmin) throw new ForbiddenException('관리자만 접근할 수 있어요.');
+  adminSetAppConfig(@Body() body: { key: string; value: string }) {
     return this.appConfigService.set(body.key, body.value).then(() => ({ ok: true }));
   }
 }

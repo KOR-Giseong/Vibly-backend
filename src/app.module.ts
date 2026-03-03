@@ -15,6 +15,7 @@ import { CommunityModule } from './community/community.module';
 import { CreditModule } from './credit/credit.module';
 import { CoupleModule } from './couple/couple.module';
 import { NotificationModule } from './notification/notification.module';
+import { AdminLogModule } from './admin-log/admin-log.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { NotificationModule } from './notification/notification.module';
     CreditModule,
     CoupleModule,
     NotificationModule,
+    AdminLogModule,
   ],
   controllers: [AppController],
   providers: [

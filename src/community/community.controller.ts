@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -16,6 +15,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { PostCategory } from '@prisma/client';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { CommunityService } from './community.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -55,31 +55,27 @@ export class CommunityController {
 
   // ─── 공지사항 관리자 전용 ─────────────────────────────────────────────────
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @Post('notices')
-  createNotice(@Req() req: AuthRequest, @Body() dto: CreateNoticeDto) {
-    this.assertAdmin(req);
+  createNotice(@Body() dto: CreateNoticeDto) {
     return this.communityService.createNotice(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @Patch('notices/:id')
   updateNotice(
-    @Req() req: AuthRequest,
     @Param('id') id: string,
     @Body() dto: Partial<CreateNoticeDto>,
   ) {
-    this.assertAdmin(req);
     return this.communityService.updateNotice(id, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @Delete('notices/:id')
-  deleteNotice(@Req() req: AuthRequest, @Param('id') id: string) {
-    this.assertAdmin(req);
+  deleteNotice(@Param('id') id: string) {
     return this.communityService.deleteNotice(id);
   }
 
@@ -186,49 +182,43 @@ export class CommunityController {
 
   // ─── 관리자 ───────────────────────────────────────────────────────────────
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @SkipThrottle()
   @Get('admin/posts')
   adminGetPosts(
-    @Req() req: AuthRequest,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    this.assertAdmin(req);
     return this.communityService.adminGetPosts(
       Number(page ?? 1),
       Number(limit ?? 30),
     );
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @Patch('admin/posts/:id/hidden')
-  adminToggleHidden(@Req() req: AuthRequest, @Param('id') id: string) {
-    this.assertAdmin(req);
+  adminToggleHidden(@Param('id') id: string) {
     return this.communityService.adminToggleHidden(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @Patch('admin/posts/:id/pinned')
-  adminTogglePinned(@Req() req: AuthRequest, @Param('id') id: string) {
-    this.assertAdmin(req);
+  adminTogglePinned(@Param('id') id: string) {
     return this.communityService.adminTogglePinned(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @SkipThrottle()
   @Get('admin/reports')
   adminGetReports(
-    @Req() req: AuthRequest,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('unresolved') unresolved?: string,
   ) {
-    this.assertAdmin(req);
     return this.communityService.adminGetReports(
       Number(page ?? 1),
       Number(limit ?? 30),
@@ -236,22 +226,13 @@ export class CommunityController {
     );
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AdminJwtGuard)
   @ApiBearerAuth()
   @Patch('admin/reports/:id/resolve')
   adminResolveReport(
-    @Req() req: AuthRequest,
     @Param('id') id: string,
     @Body('hidePost') hidePost?: boolean,
   ) {
-    this.assertAdmin(req);
     return this.communityService.adminResolveReport(id, hidePost ?? false);
-  }
-
-  // ─── 내부 유틸 ───────────────────────────────────────────────────────────
-
-  private assertAdmin(req: AuthRequest) {
-    if (!req.user?.isAdmin)
-      throw new ForbiddenException('관리자 권한이 필요합니다.');
   }
 }

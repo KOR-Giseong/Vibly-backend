@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -225,6 +225,55 @@ export class AuthService {
       this.creditService.grantSignupBonus(user.id).catch(() => {});
     }
     return this.issueTokens(user.id);
+  }
+
+  // ── Admin Auth ─────────────────────────────────────────────────────────────
+
+  async adminEmailLogin(email: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.passwordHash) throw new NotFoundException('등록되지 않은 이메일이에요.');
+    if (!user.isAdmin) throw new ForbiddenException('관리자 계정이 아닙니다.');
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('비밀번호가 맞지 않아요.');
+    return this.issueAdminTokens(user.id);
+  }
+
+  async adminGoogleLogin(codeOrIdToken: string, redirectUri: string, codeVerifier?: string) {
+    const tokens = await this.googleLogin(codeOrIdToken, redirectUri, codeVerifier);
+    // googleLogin → issueTokens → 일반 토큰 반환됨. 대신 userId를 추출해 adminIssueTokens 호출
+    // googleLogin이 내부에서 upsertSocialUser → issueTokens 하므로 userId만 따로 조회해야 함
+    // 간단히: googleLogin에서 반환된 accessToken을 디코딩해 userId 추출
+    const jwt = await import('jsonwebtoken');
+    const decoded = jwt.default.decode(tokens.accessToken) as { sub: string } | null;
+    if (!decoded?.sub) throw new BadRequestException('토큰 파싱 실패');
+    const user = await this.prisma.user.findUnique({
+      where: { id: decoded.sub },
+      select: { id: true, isAdmin: true },
+    });
+    if (!user?.isAdmin) throw new ForbiddenException('관리자 계정이 아닙니다.');
+    return this.issueAdminTokens(user.id);
+  }
+
+  async adminKakaoLogin(accessToken: string) {
+    const tokens = await this.kakaoLogin(accessToken);
+    const jwt = await import('jsonwebtoken');
+    const decoded = jwt.default.decode(tokens.accessToken) as { sub: string } | null;
+    if (!decoded?.sub) throw new BadRequestException('토큰 파싱 실패');
+    const user = await this.prisma.user.findUnique({
+      where: { id: decoded.sub },
+      select: { id: true, isAdmin: true },
+    });
+    if (!user?.isAdmin) throw new ForbiddenException('관리자 계정이 아닙니다.');
+    return this.issueAdminTokens(user.id);
+  }
+
+  private async issueAdminTokens(userId: string) {
+    const adminSecret = this.config.get<string>('ADMIN_JWT_SECRET');
+    const accessToken = this.jwt.sign({ sub: userId, isAdmin: true }, {
+      secret: adminSecret,
+      expiresIn: '8h',
+    });
+    return { accessToken };
   }
 
   // ── Token ──────────────────────────────────────────────────────────────────

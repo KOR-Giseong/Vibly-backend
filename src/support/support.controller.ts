@@ -20,6 +20,7 @@ import { extname } from 'path';
 import { Request } from 'express';
 import { SupportService } from './support.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard';
 import { R2Service } from '../storage/r2.service';
 
 interface AuthRequest extends Request {
@@ -28,7 +29,6 @@ interface AuthRequest extends Request {
 
 @ApiTags('Support')
 @Controller('support')
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class SupportController {
   constructor(
@@ -38,11 +38,13 @@ export class SupportController {
 
   // ── 사용자 ────────────────────────────────────────────────────────────────
 
+  @UseGuards(JwtAuthGuard)
   @Get('faq-categories')
   getFaqCategories() {
     return this.supportService.getFaqCategories();
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('tickets')
   createTicket(
     @Req() req: AuthRequest,
@@ -57,22 +59,25 @@ export class SupportController {
   }
 
   @SkipThrottle()
+  @UseGuards(JwtAuthGuard)
   @Get('tickets/mine')
   getMyTickets(@Req() req: AuthRequest) {
     return this.supportService.getMyTickets(req.user.id);
   }
 
   @SkipThrottle()
+  @UseGuards(JwtAuthGuard)
   @Get('tickets/:id/messages')
   getMessages(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.getMessages(req.user.id, id);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('upload-image')
   @UseInterceptors(
     FileInterceptor('image', {
       storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+      limits: { fileSize: 10 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         if (!file.mimetype.startsWith('image/'))
           return cb(new Error('이미지 파일만 업로드 가능합니다.'), false);
@@ -86,6 +91,7 @@ export class SupportController {
     return { imageUrl };
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('tickets/:id/messages')
   sendMessage(
     @Req() req: AuthRequest,
@@ -103,17 +109,20 @@ export class SupportController {
   // ── 관리자 ────────────────────────────────────────────────────────────────
 
   @SkipThrottle()
+  @UseGuards(AdminJwtGuard)
   @Get('admin/tickets')
   getAllTickets(@Req() req: AuthRequest) {
     return this.supportService.getAllTickets(req.user.id);
   }
 
   @SkipThrottle()
+  @UseGuards(AdminJwtGuard)
   @Get('admin/tickets/:id/messages')
   getTicketMessages(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.getTicketMessages(req.user.id, id);
   }
 
+  @UseGuards(AdminJwtGuard)
   @Post('admin/tickets/:id/messages')
   adminSendMessage(
     @Req() req: AuthRequest,
@@ -128,6 +137,7 @@ export class SupportController {
     );
   }
 
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/tickets/:id/reply')
   replyTicket(
     @Req() req: AuthRequest,
@@ -137,6 +147,7 @@ export class SupportController {
     return this.supportService.replyTicket(req.user.id, id, body.reply);
   }
 
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/tickets/:id/status')
   updateTicketStatus(
     @Req() req: AuthRequest,
@@ -146,11 +157,13 @@ export class SupportController {
     return this.supportService.updateTicketStatus(req.user.id, id, body.status);
   }
 
+  @UseGuards(AdminJwtGuard)
   @Get('admin/users')
   getUsers(@Req() req: AuthRequest) {
     return this.supportService.getUsers(req.user.id);
   }
 
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/users/:id/suspend')
   suspendUser(
     @Req() req: AuthRequest,
@@ -165,36 +178,40 @@ export class SupportController {
     );
   }
 
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/users/:id/unsuspend')
   unsuspendUser(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.unsuspendUser(req.user.id, id);
   }
 
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/users/:id/toggle-admin')
   toggleAdmin(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.toggleAdmin(req.user.id, id);
   }
 
   @SkipThrottle()
+  @UseGuards(AdminJwtGuard)
   @Get('admin/stats')
   getAdminStats(@Req() req: AuthRequest) {
     return this.supportService.getAdminStats(req.user.id);
   }
 
   @SkipThrottle()
+  @UseGuards(AdminJwtGuard)
   @Get('admin/places')
   getAdminPlaces(@Req() req: AuthRequest) {
     return this.supportService.getAdminPlaces(req.user.id);
   }
 
+  @UseGuards(AdminJwtGuard)
   @Patch('admin/places/:id/toggle-active')
   togglePlaceActive(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.togglePlaceActive(req.user.id, id);
   }
 
-  // ── 체크인 관리 ────────────────────────────────────────────────────────────
-
   @SkipThrottle()
+  @UseGuards(AdminJwtGuard)
   @Get('admin/checkins')
   getAdminCheckIns(
     @Req() req: AuthRequest,
@@ -208,14 +225,14 @@ export class SupportController {
     );
   }
 
+  @UseGuards(AdminJwtGuard)
   @Delete('admin/checkins/:id')
   deleteAdminCheckIn(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.deleteAdminCheckIn(req.user.id, id);
   }
 
-  // ── 리뷰 관리 ──────────────────────────────────────────────────────────────
-
   @SkipThrottle()
+  @UseGuards(AdminJwtGuard)
   @Get('admin/reviews')
   getAdminReviews(
     @Req() req: AuthRequest,
@@ -229,6 +246,7 @@ export class SupportController {
     );
   }
 
+  @UseGuards(AdminJwtGuard)
   @Delete('admin/reviews/:id')
   deleteAdminReview(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.deleteAdminReview(req.user.id, id);

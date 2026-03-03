@@ -6,6 +6,7 @@ import { HttpModule } from '@nestjs/axios';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AdminJwtStrategy } from './strategies/admin-jwt.strategy';
 import { CreditModule } from '../credit/credit.module';
 import { StorageModule } from '../storage/storage.module';
 
@@ -25,7 +26,7 @@ import { StorageModule } from '../storage/storage.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, AdminJwtStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}

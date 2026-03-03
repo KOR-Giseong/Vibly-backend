@@ -48,6 +48,26 @@ export class AuthController {
     return this.authService.appleLogin(dto.idToken, dto.name);
   }
 
+  // ── Admin Login ────────────────────────────────────────────────────────────
+
+  @Post('admin/login')
+  @Throttle({ auth: {} })
+  adminEmailLogin(@Body() dto: EmailLoginDto) {
+    return this.authService.adminEmailLogin(dto.email, dto.password);
+  }
+
+  @Post('admin/google')
+  @Throttle({ auth: {} })
+  adminGoogleLogin(@Body() dto: SocialLoginDto) {
+    return this.authService.adminGoogleLogin(dto.idToken, dto.redirectUri ?? '', dto.codeVerifier);
+  }
+
+  @Post('admin/kakao')
+  @Throttle({ auth: {} })
+  adminKakaoLogin(@Body() dto: SocialLoginDto) {
+    return this.authService.adminKakaoLogin(dto.idToken);
+  }
+
   // ── Token ──────────────────────────────────────────────────────────────────
 
   @Post('refresh')
