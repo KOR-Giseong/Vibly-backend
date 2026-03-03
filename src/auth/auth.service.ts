@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -10,7 +10,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthProvider } from '@prisma/client';
 import { CreditService } from '../credit/credit.service';
 import { R2Service } from '../storage/r2.service';
-import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -21,7 +20,6 @@ export class AuthService {
     private http: HttpService,
     private creditService: CreditService,
     private r2: R2Service,
-    private mail: MailService,
   ) {
     if (!config.get<string>('JWT_REFRESH_SECRET')) {
       throw new Error('JWT_REFRESH_SECRET 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.');
@@ -54,59 +52,6 @@ export class AuthService {
     return this.issueTokens(user.id);
   }
 
-  /** OTP 생성 후 DB 저장 & 이메일 발송 */
-  private async sendOtp(userId: string, email: string) {
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6자리
-    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10분
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { emailVerifyToken: code, emailVerifyTokenExpires: expires },
-    });
-    // 이메일 발송은 fire-and-forget (응답 지연 방지)
-    this.mail.sendVerificationCode(email, code).catch(() => {});
-  }
-
-  async verifyEmailCode(email: string, code: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) throw new NotFoundException('등록되지 않은 이메일이에요.');
-    if (user.emailVerified) throw new BadRequestException('이미 인증된 이메일이에요.');
-
-    if (
-      !user.emailVerifyToken ||
-      !user.emailVerifyTokenExpires ||
-      user.emailVerifyToken !== code ||
-      user.emailVerifyTokenExpires < new Date()
-    ) {
-      throw new BadRequestException('인증 코드가 올바르지 않거나 만료됐어요.');
-    }
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { emailVerified: true, emailVerifyToken: null, emailVerifyTokenExpires: null },
-    });
-
-    // 가입 보너스 (인증 완료 시점에 지급)
-    this.creditService.grantSignupBonus(user.id).catch(() => {});
-    return this.issueTokens(user.id);
-  }
-
-  async resendVerificationCode(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) throw new NotFoundException('등록되지 않은 이메일이에요.');
-    if (user.emailVerified) throw new BadRequestException('이미 인증된 이메일이에요.');
-
-    // 마지막 발송 후 60초 이내 재요청 방지
-    if (user.emailVerifyTokenExpires) {
-      const resendAvailableAt = new Date(user.emailVerifyTokenExpires.getTime() - 9 * 60 * 1000);
-      if (new Date() < resendAvailableAt) {
-        throw new BadRequestException('잠시 후 다시 시도해 주세요. (60초 제한)');
-      }
-    }
-
-    await this.sendOtp(user.id, email);
-    return { message: '인증 코드를 재발송했어요.' };
-  }
-
   async emailLogin(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !user.passwordHash) throw new NotFoundException('등록되지 않은 이메일이에요.');
@@ -118,33 +63,33 @@ export class AuthService {
 
   // ── Google Auth ────────────────────────────────────────────────────────────
 
-  async googleLogin(code: string, redirectUri: string, codeVerifier?: string) {
+  async googleLogin(codeOrIdToken: string, redirectUri: string, codeVerifier?: string) {
     try {
-      // iOS 네이티브: iOS 클라이언트 ID + PKCE (client_secret 없음)
-      // Web: Web 클라이언트 ID + client_secret
-      const isNative = Boolean(codeVerifier);
-      const clientId = isNative
-        ? (this.config.get('GOOGLE_IOS_CLIENT_ID') ?? '')
-        : (this.config.get('GOOGLE_CLIENT_ID') ?? '');
-      const body: Record<string, string> = {
-        code,
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-      };
-      if (isNative && codeVerifier) {
-        body['code_verifier'] = codeVerifier;
-      } else {
-        body['client_secret'] = this.config.get('GOOGLE_CLIENT_SECRET') ?? '';
-      }
-      const { data: tokenData } = await firstValueFrom(
-        this.http.post('https://oauth2.googleapis.com/token', body),
-      );
+      let payload: { sub: string; email?: string; name?: string; given_name?: string };
 
-      // id_token은 JWT - 페이로드 디코딩
-      const payload = JSON.parse(
-        Buffer.from(tokenData.id_token.split('.')[1], 'base64').toString(),
-      );
+      if (codeOrIdToken.startsWith('eyJ')) {
+        // 프론트에서 이미 교환된 id_token (JWT) — 디코딩만 수행
+        payload = JSON.parse(
+          Buffer.from(codeOrIdToken.split('.')[1], 'base64').toString(),
+        );
+      } else {
+        // authorization code → 백엔드에서 교환 (Web 클라이언트 경로)
+        const body: Record<string, string> = {
+          code: codeOrIdToken,
+          client_id: this.config.get('GOOGLE_CLIENT_ID') ?? '',
+          client_secret: this.config.get('GOOGLE_CLIENT_SECRET') ?? '',
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        };
+        if (codeVerifier) body['code_verifier'] = codeVerifier;
+        const { data: tokenData } = await firstValueFrom(
+          this.http.post('https://oauth2.googleapis.com/token', body),
+        );
+        payload = JSON.parse(
+          Buffer.from(tokenData.id_token.split('.')[1], 'base64').toString(),
+        );
+      }
+
       const { sub, email, name, given_name } = payload;
       return this.upsertSocialUser(AuthProvider.GOOGLE, sub, email ?? null, name ?? given_name ?? 'Google 사용자');
     } catch {

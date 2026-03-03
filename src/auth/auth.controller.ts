@@ -5,7 +5,6 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { EmailSignupDto } from './dto/email-signup.dto';
 import { EmailLoginDto } from './dto/email-login.dto';
-import { EmailVerifyDto } from './dto/email-verify.dto';
 import { SocialLoginDto } from './dto/social-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -27,18 +26,6 @@ export class AuthController {
   @Throttle({ auth: {} })
   emailLogin(@Body() dto: EmailLoginDto) {
     return this.authService.emailLogin(dto.email, dto.password);
-  }
-
-  @Post('email/verify')
-  @Throttle({ auth: {} })
-  verifyEmail(@Body() dto: EmailVerifyDto) {
-    return this.authService.verifyEmailCode(dto.email, dto.code);
-  }
-
-  @Post('email/resend')
-  @Throttle({ auth: {} })
-  resendVerification(@Body('email') email: string) {
-    return this.authService.resendVerificationCode(email);
   }
 
   // ── Social ─────────────────────────────────────────────────────────────────
