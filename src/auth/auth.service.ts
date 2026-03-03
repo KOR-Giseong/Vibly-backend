@@ -96,7 +96,8 @@ export class AuthService {
       if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof UnauthorizedException) {
         throw e;
       }
-      throw new BadRequestException('Google 로그인에 실패했어요.');
+      console.error('[Google Login] 예상치 못한 오류:', e?.constructor?.name, e?.message);
+      throw new BadRequestException(`Google 로그인 오류: ${e?.message ?? String(e)}`);
     }
   }
 
