@@ -242,6 +242,26 @@ export class CoupleService {
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
     const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
+
+    // 구독자 → 비구독 파트너 선물: 주 100크레딧 한도
+    const [senderSubscribed, partnerSubscribed] = await Promise.all([
+      this.creditService.isSubscribed(userId),
+      this.creditService.isSubscribed(partnerId),
+    ]);
+    if (senderSubscribed && !partnerSubscribed) {
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const weeklyAgg = await this.prisma.creditTransaction.aggregate({
+        where: { userId, type: 'COUPLE_CREDIT_SEND', amount: { lt: 0 }, createdAt: { gte: weekAgo } },
+        _sum: { amount: true },
+      });
+      const sentThisWeek = Math.abs(weeklyAgg._sum.amount ?? 0);
+      if (sentThisWeek + amount > 100) {
+        throw new BadRequestException(
+          `이번 주 선물 한도를 초과해요. (한도 100크레딧, 이미 ${sentThisWeek}크레딧 선물함)`,
+        );
+      }
+    }
+
     const sender = await this.prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
 
     if (!sender || sender.credits < amount) {
@@ -635,14 +655,17 @@ ${context}
     return merged;
   }
 
-  // ── 16. AI 데이트 분석 (15크레딧) ────────────────────────────────────────────
+  // ── 16. AI 데이트 분석 (15크레딧, 파트너 구독 시 50% 할인) ──────────────────────
   async aiDateAnalysis(userId: string, userNote?: string) {
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
-    const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_COST, 'COUPLE_DATE_AI' as any, couple.id);
-
     const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
+
+    // 파트너가 구독자이면 비구독인 본인은 50% 할인
+    const partnerSubscribed = await this.creditService.isSubscribed(partnerId);
+    const discountRate = partnerSubscribed ? 0.5 : 0;
+    const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_COST, 'COUPLE_DATE_AI' as any, couple.id, discountRate);
 
     const [completedPlans, plannedPlans, myBookmarks, partnerBookmarks] = await Promise.all([
       this.prisma.datePlan.findMany({
@@ -779,12 +802,15 @@ ${partnerBookmarkText}
     }
   }
 
-  // ── 16-2. AI 타임라인 수정 (2크레딧) ──────────────────────────────────────────
+  // ── 16-2. AI 타임라인 수정 (2크레딧, 파트너 구독 시 50% 할인) ────────────────────
   async aiRefineTimeline(userId: string, timeline: any[], feedback: string) {
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
-    const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_REFINE_COST, 'COUPLE_DATE_AI' as any, couple.id);
+    const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
+    const partnerSubscribed = await this.creditService.isSubscribed(partnerId);
+    const discountRate = partnerSubscribed ? 0.5 : 0;
+    const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_REFINE_COST, 'COUPLE_DATE_AI' as any, couple.id, discountRate);
 
     // 기존 타임라인에서 지역 추출 (주소 있는 항목 우선)
     const regionFromTimeline = timeline

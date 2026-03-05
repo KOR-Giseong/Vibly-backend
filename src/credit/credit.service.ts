@@ -111,34 +111,38 @@ export class CreditService {
     amount: number,
     type: CreditTxType,
     referenceId?: string,
+    discountRate = 0, // 0 = 할인 없음, 0.5 = 50% 할인 (파트너 구독 혜택 등)
   ): Promise<number> {
     const subscribed = await this.isSubscribed(userId);
     if (subscribed) return (await this.getBalance(userId)).credits; // 구독자는 그냥 통과
+
+    // 파트너 구독 할인 적용 (소수점 올림)
+    const finalAmount = discountRate > 0 ? Math.ceil(amount * (1 - discountRate)) : amount;
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { credits: true },
     });
     if (!user) throw new ForbiddenException('사용자를 찾을 수 없어요.');
-    if (user.credits < amount) {
+    if (user.credits < finalAmount) {
       throw new BadRequestException(
-        `크레딧이 부족해요. 필요: ${amount}, 보유: ${user.credits}`,
+        `크레딧이 부족해요. 필요: ${finalAmount}${discountRate > 0 ? ` (${Math.round(discountRate * 100)}% 할인 적용)` : ''}, 보유: ${user.credits}`,
       );
     }
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: userId },
-        data: { credits: { decrement: amount } },
+        data: { credits: { decrement: finalAmount } },
         select: { credits: true },
       }),
       this.prisma.creditTransaction.create({
-        data: { userId, amount: -amount, type, referenceId },
+        data: { userId, amount: -finalAmount, type, referenceId },
       }),
     ]);
 
     this.logger.log(
-      `크레딧 소모 [${type}] userId=${userId} -${amount} → ${updated.credits}`,
+      `크레딧 소모 [${type}] userId=${userId} -${finalAmount}${discountRate > 0 ? ` (${Math.round(discountRate * 100)}% 할인)` : ''} → ${updated.credits}`,
     );
     return updated.credits;
   }
