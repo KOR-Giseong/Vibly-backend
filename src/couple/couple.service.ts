@@ -368,14 +368,17 @@ export class CoupleService {
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
     const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
-    const partner = await this.prisma.user.findUnique({
-      where: { id: partnerId },
-      select: {
-        id: true, name: true, nickname: true, avatarUrl: true,
-        gender: true, preferredVibes: true, credits: true, createdAt: true,
-        _count: { select: { checkIns: true, bookmarks: true, reviews: true } },
-      },
-    });
+    const [partner, isPremium] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: partnerId },
+        select: {
+          id: true, name: true, nickname: true, avatarUrl: true,
+          gender: true, preferredVibes: true, credits: true, createdAt: true,
+          _count: { select: { checkIns: true, bookmarks: true, reviews: true } },
+        },
+      }),
+      this.creditService.isSubscribed(partnerId),
+    ]);
     if (!partner) throw new NotFoundException('파트너 정보를 찾을 수 없어요.');
 
     return {
@@ -386,6 +389,7 @@ export class CoupleService {
       gender: partner.gender,
       preferredVibes: partner.preferredVibes,
       credits: partner.credits,
+      isPremium,
       stats: {
         checkinCount: partner._count.checkIns,
         bookmarkCount: partner._count.bookmarks,
