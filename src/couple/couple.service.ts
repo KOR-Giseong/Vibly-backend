@@ -250,8 +250,10 @@ export class CoupleService {
     ]);
     if (senderSubscribed && !partnerSubscribed) {
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      // 7일 전 vs 현재 커플 생성 시각 중 더 최근 기준으로 집계 (이전 커플 시절 내역 오염 방지)
+      const since = couple.createdAt > weekAgo ? couple.createdAt : weekAgo;
       const weeklyAgg = await this.prisma.creditTransaction.aggregate({
-        where: { userId, type: 'COUPLE_CREDIT_SEND', amount: { lt: 0 }, createdAt: { gte: weekAgo } },
+        where: { userId, type: 'COUPLE_CREDIT_SEND', amount: { lt: 0 }, createdAt: { gte: since } },
         _sum: { amount: true },
       });
       const sentThisWeek = Math.abs(weeklyAgg._sum.amount ?? 0);
