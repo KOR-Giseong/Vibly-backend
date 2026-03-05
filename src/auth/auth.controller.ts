@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Delete, Body, Get, Query, UseGuards, Req, HttpCode } from '@nestjs/common';
+import { Controller, Post, Patch, Delete, Body, Get, Query, UseGuards, Req, HttpCode, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -8,6 +8,7 @@ import { EmailLoginDto } from './dto/email-login.dto';
 import { SocialLoginDto } from './dto/social-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -95,7 +96,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   checkNickname(@Req() req: any, @Query('nickname') nickname: string) {
-    return this.authService.checkNickname(nickname, req.user.id);
+    if (!nickname || nickname.trim().length === 0) throw new BadRequestException('닉네임을 입력해주세요.');
+    if (nickname.length > 30) throw new BadRequestException('닉네임은 30자 이하여야 해요.');
+    return this.authService.checkNickname(nickname.trim(), req.user.id);
   }
 
   @Patch('profile')
@@ -114,6 +117,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   updateAvatar(@Req() req: any, @Body() body: { base64: string }) {
+    if (!body?.base64 || typeof body.base64 !== 'string') throw new BadRequestException('이미지 데이터가 없어요.');
+    // base64 문자열 크기 제한: ~10MB 이미지 → base64 약 13.7MB
+    if (body.base64.length > 14 * 1024 * 1024) throw new BadRequestException('이미지 크기는 10MB 이하여야 해요.');
+    const allowedPrefixes = ['data:image/jpeg', 'data:image/png', 'data:image/webp', '/9j/', 'iVBORw'];
+    if (!allowedPrefixes.some((p) => body.base64.startsWith(p))) throw new BadRequestException('지원하지 않는 이미지 형식이에요.');
     return this.authService.updateAvatar(req.user.id, body.base64);
   }
 
@@ -145,8 +153,8 @@ export class AuthController {
   @ApiBearerAuth()
   changePassword(
     @Req() req: any,
-    @Body() body: { currentPassword: string; newPassword: string },
+    @Body() dto: ChangePasswordDto,
   ) {
-    return this.authService.changePassword(req.user.id, body.currentPassword, body.newPassword);
+    return this.authService.changePassword(req.user.id, dto.currentPassword, dto.newPassword);
   }
 }

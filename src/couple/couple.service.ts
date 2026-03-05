@@ -882,6 +882,12 @@ ${placesListText}
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 정보를 찾을 수 없어요.');
 
+    // base64 크기 및 MIME 타입 검증
+    if (!data.base64 || typeof data.base64 !== 'string') throw new BadRequestException('이미지 데이터가 없어요.');
+    if (data.base64.length > 14 * 1024 * 1024) throw new BadRequestException('이미지 크기는 10MB 이하여야 해요.');
+    const allowedPrefixes = ['data:image/jpeg', 'data:image/png', 'data:image/webp', '/9j/', 'iVBORw'];
+    if (!allowedPrefixes.some((p) => data.base64.startsWith(p))) throw new BadRequestException('지원하지 않는 이미지 형식이에요.');
+
     // 무료 유저는 추억 사진 100장 제한
     const subscribed = await this.creditService.isSubscribed(userId);
     if (!subscribed) {
