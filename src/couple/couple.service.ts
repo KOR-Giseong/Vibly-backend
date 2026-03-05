@@ -990,10 +990,29 @@ ${placesListText}
   }
 
   // ── 21. 유저 신고 ─────────────────────────────────────────────────────────────
-  async reportUser(reporterId: string, dto: { reportedId: string; reason: string; detail?: string }) {
+  async reportUser(reporterId: string, dto: { reportedId: string; reason: string; detail?: string; imageUrls?: string[] }) {
     if (reporterId === dto.reportedId) throw new BadRequestException('자기 자신을 신고할 수 없어요.');
     const reported = await this.prisma.user.findUnique({ where: { id: dto.reportedId } });
     if (!reported) throw new NotFoundException('사용자를 찾을 수 없어요.');
+
+    // base64 이미지 → R2 업로드 (최대 3개)
+    const uploadedUrls: string[] = [];
+    if (dto.imageUrls && dto.imageUrls.length > 0) {
+      const limited = dto.imageUrls.slice(0, 3);
+      for (const b64 of limited) {
+        if (!b64 || typeof b64 !== 'string') continue;
+        if (b64.length > 14 * 1024 * 1024) throw new BadRequestException('이미지 크기는 10MB 이하여야 해요.');
+        const allowedPrefixes = ['data:image/jpeg', 'data:image/png', 'data:image/webp', '/9j/', 'iVBORw'];
+        if (!allowedPrefixes.some((p) => b64.startsWith(p))) throw new BadRequestException('지원하지 않는 이미지 형식이에요.');
+        const isPng = b64.startsWith('iVBORw') || b64.startsWith('data:image/png');
+        const ext = isPng ? 'png' : 'jpg';
+        const base64Data = b64.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeType = isPng ? 'image/png' : 'image/jpeg';
+        const url = await this.r2.upload(buffer, 'reports', ext, mimeType);
+        uploadedUrls.push(url);
+      }
+    }
 
     return this.prisma.userReport.create({
       data: {
@@ -1001,6 +1020,7 @@ ${placesListText}
         reportedId: dto.reportedId,
         reason: dto.reason as any,
         detail: dto.detail,
+        imageUrls: uploadedUrls,
       },
     });
   }

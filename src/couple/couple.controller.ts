@@ -203,7 +203,7 @@ export class CoupleController {
   @Post('report')
   reportUser(
     @Req() req: any,
-    @Body() body: { reportedId: string; reason: string; detail?: string },
+    @Body() body: { reportedId: string; reason: string; detail?: string; imageUrls?: string[] },
   ) {
     return this.coupleService.reportUser(req.user.id, body);
   }

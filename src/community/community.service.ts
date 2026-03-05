@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -11,6 +12,7 @@ import { CreateReportDto } from './dto/create-report.dto';
 import { PostCategory } from '@prisma/client';
 import { NotificationService } from '../notification/notification.service';
 import { assertNoProfanity } from '../utils/profanity.filter';
+import { R2Service } from '../storage/r2.service';
 
 const POST_SELECT = {
   id: true,
@@ -32,6 +34,7 @@ export class CommunityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationService: NotificationService,
+    private readonly r2: R2Service,
   ) {}
 
   // ─── 게시글 ───────────────────────────────────────────────────────────────
@@ -313,9 +316,12 @@ export class CommunityService {
     if (post.userId === userId)
       throw new ForbiddenException('자신의 게시글을 신고할 수 없습니다.');
 
+    // base64 이미지 → R2 업로드
+    const uploadedUrls = await this.uploadReportImages(dto.imageUrls);
+
     try {
       await this.prisma.postReport.create({
-        data: { postId, userId, reason: dto.reason, detail: dto.detail },
+        data: { postId, userId, reason: dto.reason, detail: dto.detail, imageUrls: uploadedUrls },
       });
       return {
         success: true,
@@ -368,6 +374,27 @@ export class CommunityService {
   }
 
   // ─── 내부 유틸 ───────────────────────────────────────────────────────────
+
+  /** base64 이미지 배열을 R2에 업로드하고 URL 배열 반환 (최대 3개) */
+  private async uploadReportImages(imageUrls?: string[]): Promise<string[]> {
+    if (!imageUrls || imageUrls.length === 0) return [];
+    const limited = imageUrls.slice(0, 3);
+    const results: string[] = [];
+    for (const b64 of limited) {
+      if (!b64 || typeof b64 !== 'string') continue;
+      if (b64.length > 14 * 1024 * 1024) throw new BadRequestException('이미지 크기는 10MB 이하여야 해요.');
+      const allowedPrefixes = ['data:image/jpeg', 'data:image/png', 'data:image/webp', '/9j/', 'iVBORw'];
+      if (!allowedPrefixes.some((p) => b64.startsWith(p))) throw new BadRequestException('지원하지 않는 이미지 형식이에요.');
+      const isPng = b64.startsWith('iVBORw') || b64.startsWith('data:image/png');
+      const ext = isPng ? 'png' : 'jpg';
+      const base64Data = b64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const mimeType = isPng ? 'image/png' : 'image/jpeg';
+      const url = await this.r2.upload(buffer, 'reports', ext, mimeType);
+      results.push(url);
+    }
+    return results;
+  }
 
   private formatPost(post: Record<string, any>, userId?: string) {
     const likes: { id: string }[] =
