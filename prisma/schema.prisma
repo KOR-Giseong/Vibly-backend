@@ -744,3 +744,15 @@ model AdminLog {
   @@index([adminId])
   @@index([createdAt])
 }
+
+// ─── Admin Internal Chat ──────────────────────────────────────────────────────
+
+model AdminMessage {
+  id         String   @id @default(uuid())
+  authorId   String
+  authorName String
+  content    String
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

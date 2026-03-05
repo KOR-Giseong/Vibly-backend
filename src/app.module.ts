@@ -16,6 +16,7 @@ import { CreditModule } from './credit/credit.module';
 import { CoupleModule } from './couple/couple.module';
 import { NotificationModule } from './notification/notification.module';
 import { AdminLogModule } from './admin-log/admin-log.module';
+import { AdminMessageModule } from './admin-message/admin-message.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AdminLogModule } from './admin-log/admin-log.module';
     CoupleModule,
     NotificationModule,
     AdminLogModule,
+    AdminMessageModule,
   ],
   controllers: [AppController],
   providers: [
