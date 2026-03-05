@@ -15,6 +15,7 @@ import {
 import { NotificationService } from './notification.service';
 import { RegisterTokenDto } from './dto/register-token.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
@@ -80,6 +81,7 @@ export class NotificationController {
   }
 
   // ── 전체 사용자 브로드캐스트 (관리자 전용) ────────────────────────────────
+  @UseGuards(AdminJwtGuard)
   @Post('broadcast')
   broadcast(
     @Req() req: { user: { id: string } },
