@@ -10,6 +10,7 @@ import { CreateNoticeDto } from './dto/create-notice.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { PostCategory } from '@prisma/client';
 import { NotificationService } from '../notification/notification.service';
+import { assertNoProfanity } from '../utils/profanity.filter';
 
 const POST_SELECT = {
   id: true,
@@ -102,6 +103,8 @@ export class CommunityService {
   }
 
   async createPost(userId: string, dto: CreatePostDto) {
+    assertNoProfanity(dto.title, '제목');
+    if (dto.body) assertNoProfanity(dto.body, '내용');
     const post = await this.prisma.post.create({
       data: { userId, ...dto },
       select: POST_SELECT,
@@ -114,6 +117,8 @@ export class CommunityService {
     if (!post) throw new NotFoundException('게시글을 찾을 수 없습니다.');
     if (post.userId !== userId)
       throw new ForbiddenException('본인 게시글만 수정할 수 있습니다.');
+    if (dto.title) assertNoProfanity(dto.title, '제목');
+    if (dto.body) assertNoProfanity(dto.body, '내용');
 
     const updated = await this.prisma.post.update({
       where: { id },
@@ -168,6 +173,7 @@ export class CommunityService {
   // ─── 댓글 ─────────────────────────────────────────────────────────────────
 
   async addComment(postId: string, userId: string, dto: CreateCommentDto) {
+    assertNoProfanity(dto.body, '댓글');
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { userId: true, title: true, isHidden: true },

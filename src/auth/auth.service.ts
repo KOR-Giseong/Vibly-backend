@@ -8,6 +8,7 @@ import * as jwt from 'jsonwebtoken';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthProvider } from '@prisma/client';
+import { assertNoProfanity, containsProfanity } from '../utils/profanity.filter';
 import { CreditService } from '../credit/credit.service';
 import { R2Service } from '../storage/r2.service';
 
@@ -402,6 +403,7 @@ export class AuthService {
   }
 
   async checkNickname(nickname: string, userId: string) {
+    if (containsProfanity(nickname)) return { available: false, reason: 'profanity' };
     const existing = await this.prisma.user.findFirst({
       where: { nickname, NOT: { id: userId } },
     });
@@ -410,6 +412,7 @@ export class AuthService {
 
   async updateProfile(userId: string, data: { name?: string; nickname?: string; gender?: string; preferredVibes?: string[] }) {
     if (data.nickname) {
+      assertNoProfanity(data.nickname, '닉네임');
       const taken = await this.prisma.user.findFirst({
         where: { nickname: data.nickname, NOT: { id: userId } },
       });

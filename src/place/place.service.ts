@@ -10,6 +10,7 @@ import { OcrService } from '../ocr/ocr.service';
 import { ReceiptMatcherService } from '../ocr/receipt-matcher.service';
 import { CreditService, CREDIT_REWARDS, CreditTxType } from '../credit/credit.service';
 import { NotificationService } from '../notification/notification.service';
+import { assertNoProfanity } from '../utils/profanity.filter';
 
 // 카테고리별 폴백 이미지 (카카오 검색 결과와 동일하게 Unsplash 고정 사진)
 const CATEGORY_IMAGE: Record<string, string> = {
@@ -327,6 +328,7 @@ export class PlaceService {
 
   // ── 리뷰 작성 / 수정 (1인 1리뷰 upsert) ──────────────────────────────────
   async addReview(userId: string, placeId: string, rating: number, body: string) {
+    if (body) assertNoProfanity(body, '리뷰');
     if (placeId.startsWith('kakao_')) {
       await this.upsertKakaoPlace(placeId);
     }
