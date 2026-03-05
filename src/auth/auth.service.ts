@@ -68,7 +68,6 @@ export class AuthService {
       let idTokenString: string;
 
       const tokenInput = (codeOrIdToken ?? '').trim();
-      console.log('[Google Login] 수신 토큰 앞부분:', tokenInput.substring(0, 40), 'length:', tokenInput.length);
 
       if (tokenInput.startsWith('eyJ')) {
         // 프론트에서 이미 교환된 id_token
@@ -94,7 +93,6 @@ export class AuthService {
 
       // 2차: jwt.decode 실패 시 수동 base64url 디코딩
       if (!payload) {
-        console.warn('[Google Login] jwt.decode 실패 - 수동 디코딩 시도');
         try {
           const parts = idTokenString.split('.');
           if (parts.length !== 3) throw new Error(`JWT 파트 수 오류: ${parts.length}`);
@@ -102,12 +100,9 @@ export class AuthService {
           const padded = payloadBase64.padEnd(payloadBase64.length + (4 - payloadBase64.length % 4) % 4, '=');
           payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
         } catch (decodeErr) {
-          console.error('[Google Login] 수동 디코딩도 실패:', decodeErr?.message);
           throw new BadRequestException(`Google id_token 파싱 실패: ${decodeErr?.message}`);
         }
       }
-
-      console.log('[Google Login] 디코딩 결과 sub:', payload?.sub ?? 'MISSING', 'email:', payload?.email ?? 'none');
 
       if (!payload?.sub) throw new BadRequestException('Google id_token에 사용자 ID(sub)가 없어요.');
 
@@ -117,7 +112,6 @@ export class AuthService {
       if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof UnauthorizedException) {
         throw e;
       }
-      console.error('[Google Login] 예상치 못한 오류:', e?.constructor?.name, e?.message);
       throw new BadRequestException(`Google 로그인 처리 오류: ${e?.message ?? String(e)}`);
     }
   }
@@ -278,15 +272,21 @@ export class AuthService {
 
   // ── Token ──────────────────────────────────────────────────────────────────
 
+  private hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
   async refresh(refreshToken: string) {
     if (!refreshToken) throw new UnauthorizedException('토큰이 없어요.');
-    const record = await this.prisma.refreshToken.findUnique({ where: { token: refreshToken } });
+    const hashed = this.hashToken(refreshToken);
+    const record = await this.prisma.refreshToken.findUnique({ where: { token: hashed } });
     if (!record || record.expiresAt < new Date()) throw new UnauthorizedException('토큰이 만료됐어요.');
     return this.issueTokens(record.userId);
   }
 
   async logout(userId: string, refreshToken: string) {
-    await this.prisma.refreshToken.deleteMany({ where: { userId, token: refreshToken } });
+    const hashed = this.hashToken(refreshToken);
+    await this.prisma.refreshToken.deleteMany({ where: { userId, token: hashed } });
   }
 
   private async issueTokens(userId: string) {
@@ -299,9 +299,11 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
+    // DB에는 SHA-256 해시값만 저장 (원본 노출 방지)
+    const hashed = this.hashToken(refreshToken);
     await this.prisma.refreshToken.upsert({
-      where: { token: refreshToken },
-      create: { userId, token: refreshToken, expiresAt },
+      where: { token: hashed },
+      create: { userId, token: hashed, expiresAt },
       update: { expiresAt },
     });
 

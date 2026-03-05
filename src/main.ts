@@ -32,16 +32,18 @@ async function bootstrap() {
     .split(',').map((o) => o.trim()).filter(Boolean);
   app.enableCors({ origin: isProd ? allowedOrigins : true, credentials: true });
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
-  // Swagger
-  const config = new DocumentBuilder()
-    .setTitle('Vibly API')
-    .setDescription('감정 기반 장소 추천 서비스')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  // Swagger — 프로덕션 환경에서는 비노출
+  if (!isProd) {
+    const config = new DocumentBuilder()
+      .setTitle('Vibly API')
+      .setDescription('감정 기반 장소 추천 서비스')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  }
 
   const port = Number(process.env.PORT ?? 3000);
   try {
