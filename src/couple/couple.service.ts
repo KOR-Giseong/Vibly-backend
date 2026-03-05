@@ -272,11 +272,13 @@ export class CoupleService {
     const partnerId = couple.user1Id === userId ? couple.user2Id : couple.user1Id;
 
     // amount < 0 인 TX만 가져와서 중복 방지 (선물 1건당 TX 2개 생성)
+    // 현재 커플 createdAt 이후 거래만 필터 → 재결합 시 이전 내역 노출 방지
     const txs = await this.prisma.creditTransaction.findMany({
       where: {
         userId: { in: [userId, partnerId] },
         type: 'COUPLE_CREDIT_SEND',
         amount: { lt: 0 },
+        createdAt: { gte: couple.createdAt },
       },
       include: {
         user: { select: { id: true, name: true, nickname: true, avatarUrl: true } },
