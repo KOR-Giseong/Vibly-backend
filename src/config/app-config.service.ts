@@ -35,4 +35,13 @@ export class AppConfigService {
     const records = await this.prisma.appConfig.findMany();
     return Object.fromEntries(records.map((r) => [r.key, r.value]));
   }
+
+  /** 앱에서 공개적으로 필요한 설정값만 반환 */
+  async getPublic(): Promise<Record<string, string>> {
+    const PUBLIC_KEYS = ['FREE_TRIAL_ENABLED', 'FREE_TRIAL_DAYS', 'DISCOUNT_ENABLED', 'DISCOUNT_PCT'];
+    const records = await this.prisma.appConfig.findMany({
+      where: { key: { in: PUBLIC_KEYS } },
+    });
+    return Object.fromEntries(records.map((r) => [r.key, r.value]));
+  }
 }

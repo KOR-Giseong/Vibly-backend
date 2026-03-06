@@ -14,6 +14,13 @@ export class CreditController {
     private appConfigService: AppConfigService,
   ) {}
 
+  // ── 공개 ────────────────────────────────────────────────────────────────
+
+  @Get('app-config')
+  getPublicAppConfig() {
+    return this.appConfigService.getPublic();
+  }
+
   // ── 사용자 ────────────────────────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)
@@ -59,6 +66,12 @@ export class CreditController {
       body.productId,
       body.receiptData,
     );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('subscription/trial')
+  startFreeTrial(@Req() req: any) {
+    return this.creditService.startFreeTrial(req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)

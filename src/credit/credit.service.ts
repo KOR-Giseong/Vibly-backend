@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { AppConfigService } from '../config/app-config.service';
 import {
   CreditTxType,
   SubscriptionPlatform,
@@ -63,6 +64,7 @@ export class CreditService {
   constructor(
     private prisma: PrismaService,
     private notificationService: NotificationService,
+    private appConfigService: AppConfigService,
   ) {}
 
   // ── 잔액 조회 ──────────────────────────────────────────────────────────────
@@ -87,6 +89,64 @@ export class CreditService {
       where: { userId, expiresAt: { gt: new Date() } },
     });
     return !!sub;
+  }
+
+  // ── 무료 체험 시작 (계정 당 1회) ──────────────────────────────────────────
+  async startFreeTrial(userId: string) {
+    // 1. FREE_TRIAL_ENABLED 확인
+    const enabled = await this.appConfigService.getBoolean(
+      'FREE_TRIAL_ENABLED',
+      false,
+    );
+    if (!enabled)
+      throw new BadRequestException('현재 무료 체험이 제공되지 않아요.');
+
+    // 2. 이미 활성 구독 중이면 거부
+    const activeSub = await this.prisma.subscription.findFirst({
+      where: { userId, expiresAt: { gt: new Date() } },
+    });
+    if (activeSub) throw new BadRequestException('이미 구독 중이에요.');
+
+    // 3. 계정당 1회 제한 (TRIAL 이력 확인)
+    const prevTrial = await this.prisma.subscription.findFirst({
+      where: { userId, type: SubscriptionType.TRIAL },
+    });
+    if (prevTrial)
+      throw new BadRequestException('무료 체험은 계정당 1회만 이용 가능해요.');
+
+    // 4. FREE_TRIAL_DAYS 가져오기 (기본값 7일)
+    const days = await this.appConfigService.getNumber('FREE_TRIAL_DAYS', 7);
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + days);
+
+    const sub = await this.prisma.subscription.create({
+      data: {
+        userId,
+        platform: SubscriptionPlatform.WEB,
+        type: SubscriptionType.TRIAL,
+        receiptData: '',
+        productId: 'free_trial',
+        expiresAt,
+      },
+    });
+
+    this.notificationService
+      .send(
+        userId,
+        'CREDIT',
+        '무료 체험이 시작됐어요 🎉',
+        `${days}일간 프리미엄 기능을 무료로 즐겨보세요!`,
+        {
+          type: 'TRIAL_START',
+          durationDays: days,
+          expiresAt: expiresAt.toISOString(),
+        },
+      )
+      .catch(() => {});
+
+    this.logger.log(`무료체험 시작 userId=${userId} days=${days}`);
+    return { ok: true, expiresAt: sub.expiresAt, durationDays: days };
   }
 
   // ── 사용자 구독 취소 (즉시 만료) ──────────────────────────────────────────
