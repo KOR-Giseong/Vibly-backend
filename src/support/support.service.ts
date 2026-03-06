@@ -223,10 +223,21 @@ export class SupportService {
       where: { id: ticketId },
     });
     if (!ticket) throw new NotFoundException('문의를 찾을 수 없어요.');
-    return this.prisma.supportTicket.update({
+    const updated = await this.prisma.supportTicket.update({
       where: { id: ticketId },
       data: { adminReply: reply, repliedAt: new Date(), status: 'RESOLVED' },
     });
+    // 사용자에게 FAQ 답변 알림 전송
+    this.notificationService
+      .send(
+        ticket.userId,
+        'SUPPORT',
+        '문의 답변이 도착했어요 📬',
+        reply.length > 60 ? reply.slice(0, 60) + '...' : reply,
+        { ticketId },
+      )
+      .catch(() => {});
+    return updated;
   }
 
   async updateTicketStatus(adminId: string, ticketId: string, status: string) {
