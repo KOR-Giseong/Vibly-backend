@@ -148,7 +148,7 @@ export class AuthService {
     }
   }
 
-  private async verifyAppleToken(idToken: string): Promise<{ sub: string; email?: string }> {
+  private async verifyAppleToken(idToken: string, overrideClientId?: string): Promise<{ sub: string; email?: string }> {
     // 1. JWT 헤더에서 kid 추출
     const [headerB64] = idToken.split('.');
     const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString()) as { kid: string; alg: string };
@@ -165,7 +165,7 @@ export class AuthService {
     const pem = publicKey.export({ type: 'spki', format: 'pem' });
 
     // 4. 서명 검증 (issuer, audience 포함)
-    const clientId = this.config.get<string>('APPLE_CLIENT_ID');
+    const clientId = overrideClientId ?? this.config.get<string>('APPLE_CLIENT_ID');
     const payload = jwt.verify(idToken, pem as string, {
       algorithms: ['RS256'],
       issuer: 'https://appleid.apple.com',
@@ -260,6 +260,25 @@ export class AuthService {
     });
     if (!user?.isAdmin) throw new ForbiddenException('관리자 계정이 아닙니다.');
     return this.issueAdminTokens(user.id);
+  }
+
+  async adminAppleLogin(idToken: string) {
+    try {
+      // 웹용 Service ID 우선, 없으면 모바일 Bundle ID로 폴백
+      const webClientId =
+        this.config.get<string>('APPLE_WEB_CLIENT_ID') ??
+        this.config.get<string>('APPLE_CLIENT_ID');
+      const { sub } = await this.verifyAppleToken(idToken, webClientId);
+      const user = await this.prisma.user.findFirst({
+        where: { provider: 'apple', providerId: sub },
+        select: { id: true, isAdmin: true },
+      });
+      if (!user?.isAdmin) throw new ForbiddenException('관리자 계정이 아닙니다.');
+      return this.issueAdminTokens(user.id);
+    } catch (e) {
+      if (e instanceof ForbiddenException) throw e;
+      throw new BadRequestException('Apple 로그인에 실패했어요.');
+    }
   }
 
   private async issueAdminTokens(userId: string) {

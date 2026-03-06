@@ -69,6 +69,12 @@ export class AuthController {
     return this.authService.adminKakaoLogin(dto.idToken);
   }
 
+  @Post('admin/apple')
+  @Throttle({ auth: {} })
+  adminAppleLogin(@Body() dto: SocialLoginDto) {
+    return this.authService.adminAppleLogin(dto.idToken);
+  }
+
   // ── Token ──────────────────────────────────────────────────────────────────
 
   @Post('refresh')
