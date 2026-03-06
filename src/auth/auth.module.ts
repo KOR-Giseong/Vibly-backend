@@ -20,7 +20,7 @@ import { StorageModule } from '../storage/storage.module';
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         secret: config.get('JWT_SECRET'),
-        signOptions: { expiresIn: '15m' },
+        signOptions: { expiresIn: '2h' },
       }),
       inject: [ConfigService],
     }),
