@@ -145,18 +145,28 @@ export class NotificationService {
   }
 
   // ── 전체 사용자 브로드캐스트 (관리자 전용) ────────────────────────────────
+  async broadcastByAdmin(
+    title: string,
+    body: string,
+    type: NotificationType = 'PROMO',
+  ): Promise<{ sent: number }> {
+    return this.broadcast('', title, body, type);
+  }
+
   async broadcast(
     adminId: string,
     title: string,
     body: string,
     type: NotificationType = 'PROMO',
   ): Promise<{ sent: number }> {
-    // 관리자 확인
-    const admin = await this.prisma.user.findUnique({
-      where: { id: adminId },
-      select: { isAdmin: true },
-    });
-    if (!admin?.isAdmin) throw new Error('관리자만 전송할 수 있어요.');
+    // adminId가 있을 때만 관리자 확인 (내부 호출 시 스킵)
+    if (adminId) {
+      const admin = await this.prisma.user.findUnique({
+        where: { id: adminId },
+        select: { isAdmin: true },
+      });
+      if (!admin?.isAdmin) throw new Error('관리자만 전송할 수 있어요.');
+    }
 
     // 모든 사용자에게 DB 알림 생성 + 푸시 토큰 수집
     const users = await this.prisma.user.findMany({

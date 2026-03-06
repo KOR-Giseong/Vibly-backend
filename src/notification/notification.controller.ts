@@ -79,14 +79,16 @@ export class NotificationController {
   ) {
     return this.notificationService.removeToken(req.user.id, pushToken);
   }
+}
 
-  // ── 전체 사용자 브로드캐스트 (관리자 전용) ────────────────────────────────
-  @UseGuards(AdminJwtGuard)
+// ── 관리자 전용 알림 컨트롤러 (JwtAuthGuard 없음) ─────────────────────────────
+@UseGuards(AdminJwtGuard)
+@Controller('notifications')
+export class AdminNotificationController {
+  constructor(private readonly notificationService: NotificationService) {}
+
   @Post('broadcast')
-  broadcast(
-    @Req() req: { user: { id: string } },
-    @Body() body: { title: string; message: string },
-  ) {
-    return this.notificationService.broadcast(req.user.id, body.title, body.message, 'NOTICE');
+  broadcast(@Body() body: { title: string; message: string }) {
+    return this.notificationService.broadcastByAdmin(body.title, body.message, 'NOTICE');
   }
 }
