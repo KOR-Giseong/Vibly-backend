@@ -117,7 +117,8 @@ export class CreditService {
     if (subscribed) return (await this.getBalance(userId)).credits; // 구독자는 그냥 통과
 
     // 파트너 구독 할인 적용 (소수점 올림)
-    const finalAmount = discountRate > 0 ? Math.ceil(amount * (1 - discountRate)) : amount;
+    const finalAmount =
+      discountRate > 0 ? Math.ceil(amount * (1 - discountRate)) : amount;
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

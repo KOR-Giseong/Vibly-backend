@@ -321,7 +321,13 @@ export class CommunityService {
 
     try {
       await this.prisma.postReport.create({
-        data: { postId, userId, reason: dto.reason, detail: dto.detail, imageUrls: uploadedUrls },
+        data: {
+          postId,
+          userId,
+          reason: dto.reason,
+          detail: dto.detail,
+          imageUrls: uploadedUrls,
+        },
       });
       return {
         success: true,
@@ -382,10 +388,19 @@ export class CommunityService {
     const results: string[] = [];
     for (const b64 of limited) {
       if (!b64 || typeof b64 !== 'string') continue;
-      if (b64.length > 14 * 1024 * 1024) throw new BadRequestException('이미지 크기는 10MB 이하여야 해요.');
-      const allowedPrefixes = ['data:image/jpeg', 'data:image/png', 'data:image/webp', '/9j/', 'iVBORw'];
-      if (!allowedPrefixes.some((p) => b64.startsWith(p))) throw new BadRequestException('지원하지 않는 이미지 형식이에요.');
-      const isPng = b64.startsWith('iVBORw') || b64.startsWith('data:image/png');
+      if (b64.length > 14 * 1024 * 1024)
+        throw new BadRequestException('이미지 크기는 10MB 이하여야 해요.');
+      const allowedPrefixes = [
+        'data:image/jpeg',
+        'data:image/png',
+        'data:image/webp',
+        '/9j/',
+        'iVBORw',
+      ];
+      if (!allowedPrefixes.some((p) => b64.startsWith(p)))
+        throw new BadRequestException('지원하지 않는 이미지 형식이에요.');
+      const isPng =
+        b64.startsWith('iVBORw') || b64.startsWith('data:image/png');
       const ext = isPng ? 'png' : 'jpg';
       const base64Data = b64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Buffer.from(base64Data, 'base64');
