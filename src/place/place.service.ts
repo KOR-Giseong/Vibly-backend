@@ -747,6 +747,23 @@ export class PlaceService {
       where: { id: kakaoPlaceId },
       include: { tags: true },
     });
+
+    // DB에 있는데 lat/lng가 없는 경우 → Kakao 재조회로 좌표 보충 시도
+    if (existing && (!existing.lat || !existing.lng)) {
+      this.logger.warn(`[fetchKakaoPlace] lat/lng 누락 → Kakao 재조회: ${existing.name} (${kakaoPlaceId})`);
+      const searchLat = hint?.lat ?? 37.5665;
+      const searchLng = hint?.lng ?? 126.9780;
+      const searchName = hint?.name ?? existing.name;
+      try {
+        const results = await this.kakao.searchByKeyword(searchName, searchLat, searchLng, 5, 'distance', 15);
+        const matched = results.find((p) => p.id === kakaoPlaceId);
+        if (matched && matched.lat && matched.lng) return matched;
+      } catch (e) {
+        this.logger.warn(`[fetchKakaoPlace] Kakao 재조회 실패: ${e}`);
+      }
+      // Kakao 재조회 실패해도 기존 DB 데이터 반환 (좌표 없이)
+    }
+
     if (existing) {
       return {
         id: existing.id,
