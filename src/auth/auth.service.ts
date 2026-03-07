@@ -437,7 +437,15 @@ export class AuthService {
       });
       if (taken) throw new ConflictException('이미 사용 중인 닉네임이에요.');
     }
-    return this.prisma.user.update({
+
+    // 최초 프로필 설정 여부 확인 (isProfileComplete가 false → true 전환 시점)
+    const before = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isProfileComplete: true },
+    });
+    const isFirstSetup = !before?.isProfileComplete;
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(data.name && { name: data.name }),
@@ -452,6 +460,22 @@ export class AuthService {
         status: true, createdAt: true,
       },
     });
+
+    // 최초 가입 시 환영 알림 생성
+    if (isFirstSetup) {
+      const displayName = data.nickname?.trim() || data.name?.trim() || '회원';
+      await this.prisma.notification.create({
+        data: {
+          userId,
+          type: 'NOTICE',
+          title: '🎉 Vibly에 오신 걸 환영해요!',
+          body: `${displayName}님, 반가워요! 지금 기분에 딱 맞는 장소를 AI와 함께 찾아보세요 ✨`,
+          isRead: false,
+        },
+      });
+    }
+
+    return updated;
   }
 
   // ── 아바타 업데이트 (R2 오브젝트 스토리지) ─────────────────────────────────
