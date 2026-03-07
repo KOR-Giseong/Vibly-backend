@@ -24,7 +24,7 @@ export class MoodService {
     private creditService: CreditService,
   ) {}
 
-  async search(query: string, userId?: string, lat?: number, lng?: number, limit = 20, radius?: number) {
+  async search(query: string, userId?: string, lat?: number, lng?: number, limit = 20, radius?: number, regionLabel?: string) {
     // 프리미엄 여부에 따라 limit/radius 상한선 적용
     const subscribed = userId ? await this.creditService.isSubscribed(userId) : false;
 
@@ -40,11 +40,11 @@ export class MoodService {
     const searchLng = lng ?? 126.9780;
 
     // 1. 빠른 키워드 매칭 시도 (Gemini 없이 즉시 결과)
-    const quickMatch = this.tryQuickMatch(query);
+    const quickMatch = this.tryQuickMatch(query, regionLabel);
     const wasAiSearch = !quickMatch; // quick match 실패 → Gemini 호출 = AI 검색
 
     // 2. 매칭 성공 시 바로 검색, 실패 시 Gemini 분석
-    const analysis = quickMatch ?? (await this.analyzeWithGemini(query));
+    const analysis = quickMatch ?? (await this.analyzeWithGemini(query, regionLabel));
 
     // 3. 카카오 실제 장소 검색 (키워드별 병렬 호출)
     const kakaoResults = await this.searchKakaoPlaces(analysis.keywords, searchLat, searchLng, safeLimit, safeRadius);
@@ -74,14 +74,19 @@ export class MoodService {
   }
 
   // ── Gemini 분석 ─────────────────────────────────────────────────────────────
-  private async analyzeWithGemini(query: string): Promise<GeminiAnalysis> {
+  private async analyzeWithGemini(query: string, regionLabel?: string): Promise<GeminiAnalysis> {
     // 프롬프트 템플릿 DB 조회
     const template = await this.prisma.promptTemplate.findUnique({
       where: { type: 'MOOD_ANALYSIS' },
     });
 
     const systemPrompt = template?.template ?? DEFAULT_PROMPT;
-    const userPrompt = systemPrompt.replace('{query}', query);
+    const region = regionLabel && regionLabel !== '내 위치' && regionLabel !== '전체'
+      ? regionLabel
+      : '근처';
+    const userPrompt = systemPrompt
+      .replace('{query}', query)
+      .replace('{region}', region);
 
     try {
       const res = await fetch(
@@ -126,10 +131,10 @@ export class MoodService {
 
       // JSON 파싱 실패 → 폴백
       this.logger.warn(`Gemini JSON 파싱 실패. text="${text.slice(0, 100)}"`);
-      return this.buildFallbackAnalysis(query);
+      return this.buildFallbackAnalysis(query, regionLabel);
     } catch (err) {
       this.logger.error('Gemini API 호출 실패 → 폴백', err);
-      return this.buildFallbackAnalysis(query);
+      return this.buildFallbackAnalysis(query, regionLabel);
     }
   }
 
@@ -201,32 +206,37 @@ export class MoodService {
   }
 
   // ── 빠른 키워드 매칭 (Gemini 없이 즉시 결과 반환, 매칭 실패 시 null) ────────
-  private tryQuickMatch(query: string): GeminiAnalysis | null {
-    const map: Record<string, GeminiAnalysis> = {
-      카페:    { summary: '☕ 향긋한 커피와 함께 여유로운 시간을 보내봐요!', keywords: ['카페', '북카페', '루프탑 카페'] },
-      커피:    { summary: '☕ 커피 한 잔으로 여유를 즐겨봐요!', keywords: ['카페', '북카페', '루프탑 카페'] },
-      행복:    { summary: '😊 행복한 기분엔 활기찬 카페나 공원이 잘 어울려요!', keywords: ['카페', '공원', '맛집'] },
-      평온:    { summary: '😌 평온한 마음엔 조용한 북카페가 딱이에요.', keywords: ['북카페', '공원', '조용한 카페'] },
-      신남:    { summary: '🥳 신나는 날엔 노래방이나 볼링 어때요?', keywords: ['노래방', '볼링장', '보드게임카페'] },
-      신나:    { summary: '🥳 신나는 날엔 노래방이나 볼링 어때요?', keywords: ['노래방', '볼링장', '보드게임카페'] },
-      우울:    { summary: '😔 우울할 땐 찜질방에서 몸을 녹여봐요.', keywords: ['찜질방', '카페', '공원'] },
-      열정:    { summary: '🔥 열정이 넘칠 때는 활기찬 공간이 좋아요!', keywords: ['클라이밍', '볼링장', '레스토랑'] },
-      생각:    { summary: '💭 생각 정리엔 조용한 공간이 좋아요.', keywords: ['북카페', '공원', '독서실'] },
-      지침:    { summary: '😪 지쳤을 땐 조용히 쉴 수 있는 곳으로.', keywords: ['찜질방', '공원', '조용한 카페'] },
-      지쳐:    { summary: '😪 지쳐있을 때 따뜻하게 쉬어가요.', keywords: ['찜질방', '공원', '조용한 카페'] },
-      배고파:  { summary: '🍽️ 배고플 땐 맛집으로 고고!', keywords: ['맛집', '레스토랑', '이자카야'] },
-      배고픔:  { summary: '🍽️ 배고플 땐 맛집으로 고고!', keywords: ['맛집', '레스토랑', '이자카야'] },
-      심심:    { summary: '🎮 심심할 땐 오락실이나 방탈출 어때요?', keywords: ['오락실', '방탈출', '보드게임카페'] },
-      스트레스: { summary: '😤 스트레스는 확 풀어버려요!', keywords: ['노래방', '볼링장', 'PC방'] },
-      화나:    { summary: '😤 화날 땐 소리 지르고 싶죠! 노래방 어때요?', keywords: ['노래방', '볼링장', '방탈출'] },
-      외로:    { summary: '🫂 외로울 땐 따뜻한 공간으로.', keywords: ['보드게임카페', '북카페', '공원'] },
-      설레:    { summary: '💓 설레는 날엔 분위기 있는 곳으로!', keywords: ['루프탑 카페', '레스토랑', '야경 명소'] },
-      데이트:  { summary: '💕 데이트엔 특별한 장소가 필요하죠!', keywords: ['루프탑 카페', '레스토랑', '야경 명소'] },
-      노래:    { summary: '🎤 노래하고 싶을 땐 노래방으로!', keywords: ['노래방', '라이브카페', '음악카페'] },
-      볼링:    { summary: '🎳 볼링장에서 신나게 놀아봐요!', keywords: ['볼링장', '오락실', '당구장'] },
-      술:      { summary: '🍺 가볍게 한잔하고 싶은 밤.', keywords: ['이자카야', '포차', '바'] },
-      밥:      { summary: '🍜 맛있는 거 먹으러 가봐요!', keywords: ['맛집', '레스토랑', '국밥'] },
-      운동:    { summary: '💪 운동으로 에너지를 발산해봐요!', keywords: ['클라이밍', '볼링장', '헬스장'] },
+  private tryQuickMatch(query: string, regionLabel?: string): GeminiAnalysis | null {
+    const region = regionLabel && regionLabel !== '내 위치' && regionLabel !== '전체'
+      ? regionLabel
+      : null;
+    const suffix = region ? ` ${region}에서 딱 맞는 곳을 찾아봤어요!` : ' 지금 딱 어울리는 곳을 찾아봤어요!';
+
+    const map: Record<string, { summary: string; keywords: string[] }> = {
+      카페:    { summary: `☕ 카페에서 여유로운 시간을 보내고 싶군요!${suffix}`, keywords: ['카페', '북카페', '루프탑 카페'] },
+      커피:    { summary: `☕ 커피 한 잔으로 여유를 즐기고 싶군요!${suffix}`, keywords: ['카페', '북카페', '루프탑 카페'] },
+      행복:    { summary: `😊 행복한 기분이네요! 활기찬 분위기가 잘 어울려요.${suffix}`, keywords: ['카페', '공원', '맛집'] },
+      평온:    { summary: `😌 평온한 마음엔 조용한 공간이 딱이에요.${suffix}`, keywords: ['북카페', '공원', '조용한 카페'] },
+      신남:    { summary: `🥳 신나는 날엔 신나게 즐길 수 있는 곳이 좋죠!${suffix}`, keywords: ['노래방', '볼링장', '보드게임카페'] },
+      신나:    { summary: `🥳 에너지가 넘치는 날이네요!${suffix}`, keywords: ['노래방', '볼링장', '보드게임카페'] },
+      우울:    { summary: `😔 우울할 땐 따뜻하게 몸을 녹이면 기분이 나아져요.${suffix}`, keywords: ['찜질방', '카페', '공원'] },
+      열정:    { summary: `🔥 열정이 넘칠 땐 활기 있는 공간이 제격이에요!${suffix}`, keywords: ['클라이밍', '볼링장', '레스토랑'] },
+      생각:    { summary: `💭 생각 정리가 필요할 땐 조용한 공간이 좋아요.${suffix}`, keywords: ['북카페', '공원', '독서실'] },
+      지침:    { summary: `😪 지치셨군요. 푹 쉬어갈 수 있는 곳이 필요할 것 같아요.${suffix}`, keywords: ['찜질방', '공원', '조용한 카페'] },
+      지쳐:    { summary: `😪 많이 지치셨군요. 따뜻하게 쉬어가세요.${suffix}`, keywords: ['찜질방', '공원', '조용한 카페'] },
+      배고파:  { summary: `🍽️ 배가 고프군요! 맛있는 걸 먹으면 기분도 좋아지죠.${suffix}`, keywords: ['맛집', '레스토랑', '이자카야'] },
+      배고픔:  { summary: `🍽️ 배고플 땐 맛있는 걸 먹어야죠!${suffix}`, keywords: ['맛집', '레스토랑', '이자카야'] },
+      심심:    { summary: `🎮 심심할 때 신나게 즐길 수 있는 곳으로 가봐요!${suffix}`, keywords: ['오락실', '방탈출', '보드게임카페'] },
+      스트레스: { summary: `😤 스트레스받는 날이군요! 확 풀 수 있는 곳이 필요해요.${suffix}`, keywords: ['노래방', '볼링장', 'PC방'] },
+      화나:    { summary: `😤 화날 땐 소리 질러 풀어버려요!${suffix}`, keywords: ['노래방', '볼링장', '방탈출'] },
+      외로:    { summary: `🫂 외로울 땐 따뜻한 사람들이 있는 공간이 위로가 돼요.${suffix}`, keywords: ['보드게임카페', '북카페', '공원'] },
+      설레:    { summary: `💓 설레는 날엔 분위기 있는 특별한 곳이 어울려요!${suffix}`, keywords: ['루프탑 카페', '레스토랑', '야경 명소'] },
+      데이트:  { summary: `💕 설레는 데이트를 위한 특별한 장소가 필요하죠!${suffix}`, keywords: ['루프탑 카페', '레스토랑', '야경 명소'] },
+      노래:    { summary: `🎤 노래가 하고 싶은 날이군요!${suffix}`, keywords: ['노래방', '라이브카페', '음악카페'] },
+      볼링:    { summary: `🎳 볼링으로 신나게 즐기고 싶군요!${suffix}`, keywords: ['볼링장', '오락실', '당구장'] },
+      술:      { summary: `🍺 가볍게 한잔하고 싶은 밤이네요.${suffix}`, keywords: ['이자카야', '포차', '바'] },
+      밥:      { summary: `🍜 맛있는 걸 먹고 싶은 날이네요!${suffix}`, keywords: ['맛집', '레스토랑', '국밥'] },
+      운동:    { summary: `💪 에너지를 발산하고 싶은 날이군요!${suffix}`, keywords: ['클라이밍', '볼링장', '헬스장'] },
     };
 
     for (const [key, val] of Object.entries(map)) {
@@ -239,12 +249,12 @@ export class MoodService {
   }
 
   // ── 폴백 분석 (Gemini 실패 시 사용) ─────────────────────────────────────────
-  private buildFallbackAnalysis(query: string): GeminiAnalysis {
-    const quick = this.tryQuickMatch(query);
+  private buildFallbackAnalysis(query: string, regionLabel?: string): GeminiAnalysis {
+    const quick = this.tryQuickMatch(query, regionLabel);
     if (quick) return quick;
-
+    const region = regionLabel && regionLabel !== '내 위치' && regionLabel !== '전체' ? regionLabel : '근처';
     return {
-      summary:  `오늘 기분에 어울리는 장소를 찾아봤어요! 🗺️`,
+      summary:  `오늘 기분에 딱 맞는 곳을 찾았어요! ${region}에서 어울리는 장소를 추천해드릴게요 🗺️`,
       keywords: ['카페', '공원', '맛집'],
     };
   }
@@ -479,12 +489,18 @@ const DEFAULT_PROMPT = `
 사용자의 기분이나 요청을 분석하여 어울리는 장소 유형을 카카오맵 검색 키워드로 추출해주세요.
 
 사용자 입력: {query}
+검색 지역: {region}
 
 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {
-  "summary": "한 줄 공감 메시지 (최대 60자, 이모지 포함)",
+  "summary": "2~3문장 공감 메시지 (총 100자 내외, 이모지 포함, 친근한 말투): ① 사용자 상황/감정에 공감 ② 왜 이런 장소를 추천하는지 간단한 근거 ③ {region}에서 찾아봤다는 마무리 멘트",
   "keywords": ["카카오 지역 검색 키워드1", "키워드2", "키워드3"]
 }
+
+summary 작성 예시:
+- 입력 "생리통 힘들어" + 지역 "강남": "생리통 때문에 많이 힘드시겠어요 🥺 달달한 걸 먹으면 기운이 날 거예요! 강남에서 분위기 좋은 카페를 찾아봤어요 ☕"
+- 입력 "스트레스 풀고 싶다" + 지역 "홍대": "스트레스가 쌓였군요 😤 소리 지르며 신나게 발산하면 한결 나아져요! 홍대에서 확 풀 수 있는 곳을 골라봤어요 🎤"
+- 입력 "친구랑 놀고 싶어" + 지역 "부산": "친구랑 신나게 놀고 싶은 날이네요 🥳 함께 즐길 수 있는 곳이 최고죠! 부산에서 딱 맞는 장소를 찾아봤어요 🎉"
 
 keywords 작성 규칙:
 - 반드시 2~3개 작성, 한국어로

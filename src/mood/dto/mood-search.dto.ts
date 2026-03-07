@@ -29,6 +29,11 @@ export class MoodSearchDto {
   limit?: number;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  regionLabel?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(500)
   @Max(20000)
