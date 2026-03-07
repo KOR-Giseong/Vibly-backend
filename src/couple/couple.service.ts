@@ -107,8 +107,10 @@ export class CoupleService {
     ]);
     if (!receiver) throw new NotFoundException('사용자를 찾을 수 없어요.');
 
-    const invitation = await this.prisma.coupleInvitation.create({
-      data: { senderId, receiverId, message },
+    const invitation = await this.prisma.coupleInvitation.upsert({
+      where: { senderId_receiverId: { senderId, receiverId } },
+      create: { senderId, receiverId, message },
+      update: { status: 'PENDING', message: message ?? null, respondedAt: null },
     });
 
     this.notificationService
