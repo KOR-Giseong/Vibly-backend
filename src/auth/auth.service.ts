@@ -270,7 +270,7 @@ export class AuthService {
         this.config.get<string>('APPLE_CLIENT_ID');
       const { sub } = await this.verifyAppleToken(idToken, webClientId);
       const user = await this.prisma.user.findFirst({
-        where: { provider: 'apple', providerId: sub },
+        where: { provider: 'APPLE', providerId: sub },
         select: { id: true, isAdmin: true },
       });
       if (!user?.isAdmin) throw new ForbiddenException('관리자 계정이 아닙니다.');
