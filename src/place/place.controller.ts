@@ -65,6 +65,13 @@ export class PlaceController {
     return this.placeService.getMyCheckins(req.user.id);
   }
 
+  @Get('my-reviews')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  getMyReviews(@Req() req: any) {
+    return this.placeService.getMyReviews(req.user.id);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   getById(

@@ -659,6 +659,38 @@ export class PlaceService {
     });
   }
 
+  // ── 내 리뷰 목록 ───────────────────────────────────────────────────
+  async getMyReviews(userId: string) {
+    const reviews = await this.prisma.review.findMany({
+      where: { userId },
+      include: {
+        place: {
+          include: { images: { take: 1 } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return reviews.map((r) => {
+      const p = r.place;
+      const imageUrl =
+        p.images[0]?.url ??
+        CATEGORY_IMAGE[p.category] ??
+        CATEGORY_IMAGE['ETC'];
+      return {
+        id: r.id,
+        placeId: p.id,
+        placeName: p.name,
+        category: p.category,
+        address: p.address,
+        imageUrl,
+        rating: r.rating,
+        body: r.body,
+        createdAt: r.createdAt,
+      };
+    });
+  }
+
   // ── Public: 카카오 장소 목록을 DB로 일괄 upsert (MoodService 등에서 사용) ─
   async upsertKakaoPlaces(places: Place[]): Promise<void> {
     await Promise.all(places.map((p) => this.upsertKakaoPlace(p.id, p)));
