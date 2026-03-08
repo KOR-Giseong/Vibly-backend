@@ -171,15 +171,33 @@ export class CoupleService {
       throw new ConflictException('이미 다른 커플 상태가 됐어요.');
     }
 
-    const [, couple] = await this.prisma.$transaction([
-      this.prisma.coupleInvitation.update({
+    const couple = await this.prisma.$transaction(async (tx) => {
+      await tx.coupleInvitation.update({
         where: { id: invitationId },
         data: { status: 'ACCEPTED', respondedAt: new Date() },
-      }),
-      this.prisma.couple.create({
-        data: { user1Id: invitation.senderId, user2Id: invitation.receiverId },
-      }),
-    ]);
+      });
+
+      // 이전에 커플이었다가 해제된 경우 재활성화 (unique 제약 충돌 방지)
+      const existingCouple = await tx.couple.findFirst({
+        where: {
+          OR: [
+            { user1Id: invitation.senderId, user2Id: invitation.receiverId },
+            { user1Id: invitation.receiverId, user2Id: invitation.senderId },
+          ],
+        },
+      });
+
+      if (existingCouple) {
+        return tx.couple.update({
+          where: { id: existingCouple.id },
+          data: { status: 'ACTIVE', dissolvedAt: null, anniversaryDate: null, creditShareEnabled: false },
+        });
+      } else {
+        return tx.couple.create({
+          data: { user1Id: invitation.senderId, user2Id: invitation.receiverId },
+        });
+      }
+    });
 
     const receiver = await this.prisma.user.findUnique({
       where: { id: userId },
