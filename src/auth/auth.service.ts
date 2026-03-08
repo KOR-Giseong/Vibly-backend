@@ -431,6 +431,9 @@ export class AuthService {
   }
 
   async updateProfile(userId: string, data: { name?: string; nickname?: string; gender?: string; preferredVibes?: string[] }) {
+    if (data.name) {
+      assertNoProfanity(data.name, '이름');
+    }
     if (data.nickname) {
       assertNoProfanity(data.nickname, '닉네임');
       const taken = await this.prisma.user.findFirst({

@@ -163,6 +163,18 @@ export class PlaceService {
       CATEGORY_IMAGE[place.category] ??
       CATEGORY_IMAGE['ETC'];
 
+    // Google에서 새 이미지 URL을 받았으면 DB 갱신 (만료 URL 방지)
+    if (googleData?.imageUrl && googleData.imageUrl !== dbImageUrl) {
+      this.prisma.placeImage
+        .deleteMany({ where: { placeId: place.id } })
+        .then(() =>
+          this.prisma.placeImage.create({
+            data: { placeId: place.id, url: googleData.imageUrl, isPrimary: true },
+          }),
+        )
+        .catch(() => {});
+    }
+
     return {
       ...place,
       vibeScore: score, // 항상 계산된 점수 반환 (DB의 0 덮어씀)
