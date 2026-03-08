@@ -68,6 +68,7 @@ enum CreditTxType {
   ADMIN_GRANT        // 관리자 지급
   COUPLE_DATE_AI     // -15 커플 AI 데이트 분석
   COUPLE_CREDIT_SEND // 파트너에게 크레딧 전송
+  DAILY_ATTENDANCE   // +5/+50 일일 출석 보상
 }
 
 enum NotificationType {
@@ -150,6 +151,7 @@ model User {
   postReports        PostReport[]
   creditTransactions  CreditTransaction[]
   adWatchLogs         AdWatchLog[]
+  dailyAttendances    DailyAttendance[]
   couplesAsUser1      Couple[]            @relation("CoupleUser1")
   couplesAsUser2      Couple[]            @relation("CoupleUser2")
   sentInvitations     CoupleInvitation[]  @relation("SentInvitations")
@@ -395,6 +397,22 @@ model AdWatchLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, date])
+}
+
+// ─── Daily Attendance ─────────────────────────────────────────────────────────
+
+model DailyAttendance {
+  id            String   @id @default(uuid())
+  userId        String
+  date          String   // YYYY-MM-DD (KST)
+  streak        Int      // 연속 출석 일수 (1~7)
+  creditsEarned Int
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
 }
 
 // ─── Subscription & Monetization ─────────────────────────────────────────────

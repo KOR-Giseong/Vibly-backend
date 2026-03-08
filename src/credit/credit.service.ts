@@ -53,6 +53,8 @@ export const CREDIT_REWARDS = {
   CHECKIN_GPS: 15,
   CHECKIN_RECEIPT: 20,
   AD_WATCH: 15,
+  DAILY_ATTENDANCE: 5,
+  DAILY_ATTENDANCE_WEEK: 50, // 7일 연속 보너스
 } as const;
 
 export const AD_DAILY_LIMIT = 5;
@@ -262,7 +264,105 @@ export class CreditService {
     return this.prisma.adWatchLog.count({ where: { userId, date: today } });
   }
 
-  // ── 크레딧 내역 조회 ───────────────────────────────────────────────────────
+  // -- 일일 출석 체크 -------------------------------------------------------
+  async checkDailyAttendance(userId: string): Promise<{
+    alreadyChecked: boolean;
+    streak: number;
+    creditsEarned: number;
+    totalCredits: number;
+    isWeekBonus: boolean;
+  }> {
+    const today = this.todayKst();
+
+    // 오늘 이미 출석했는지 확인
+    const existing = await this.prisma.dailyAttendance.findUnique({
+      where: { userId_date: { userId, date: today } },
+    });
+    if (existing) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
+      return {
+        alreadyChecked: true,
+        streak: existing.streak,
+        creditsEarned: existing.creditsEarned,
+        totalCredits: user?.credits ?? 0,
+        isWeekBonus: existing.streak === 7,
+      };
+    }
+
+    // 어제 출석 여부 확인 → streak 계산
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKst = new Date(yesterday.getTime() + 9 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const yesterdayRecord = await this.prisma.dailyAttendance.findUnique({
+      where: { userId_date: { userId, date: yesterdayKst } },
+    });
+
+    let streak = yesterdayRecord ? yesterdayRecord.streak + 1 : 1;
+    if (streak > 7) streak = 1; // 7일 완료 시 재시작
+
+    const isWeekBonus = streak === 7;
+    const creditsEarned = isWeekBonus
+      ? CREDIT_REWARDS.DAILY_ATTENDANCE_WEEK
+      : CREDIT_REWARDS.DAILY_ATTENDANCE;
+
+    // 출석 기록 저장 + 크레딧 지급
+    const [, , user] = await this.prisma.$transaction([
+      this.prisma.dailyAttendance.create({
+        data: { userId, date: today, streak, creditsEarned },
+      }),
+      this.prisma.creditTransaction.create({
+        data: { userId, amount: creditsEarned, type: CreditTxType.DAILY_ATTENDANCE },
+      }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { credits: { increment: creditsEarned } },
+        select: { credits: true },
+      }),
+    ]);
+
+    // 알림 (7일 보너스란 다른 메시지)
+    const title = isWeekBonus ? '🎉 7일 연속 출석 보너스!' : `💪 ${streak}.일째 출석 완료!`;
+    const body = isWeekBonus
+      ? `7일 연속 출석 달성! +${creditsEarned} 크레딧 지급`
+      : `+${creditsEarned} 크레딧 지급 • 현재 ${user.credits} 크레딧`;
+    this.notificationService
+      .send(userId, 'CREDIT', title, body)
+      .catch(() => {});
+
+    this.logger.log(`출석체크 [${streak}/7] userId=${userId} +${creditsEarned} → ${user.credits}`);
+
+    return {
+      alreadyChecked: false,
+      streak,
+      creditsEarned,
+      totalCredits: user.credits,
+      isWeekBonus,
+    };
+  }
+
+  // -- 출석 현황 조회 -------------------------------------------------------
+  async getAttendanceStatus(userId: string): Promise<{
+    hasCheckedToday: boolean;
+    streak: number;
+    recentDates: string[];
+  }> {
+    const today = this.todayKst();
+    const records = await this.prisma.dailyAttendance.findMany({
+      where: { userId },
+      orderBy: { date: 'desc' },
+      take: 7,
+      select: { date: true, streak: true },
+    });
+    const hasCheckedToday = records.some((r) => r.date === today);
+    const streak = records.length > 0 ? records[0].streak : 0;
+    const recentDates = records.map((r) => r.date);
+    return { hasCheckedToday, streak, recentDates };
+  }
+
+  // -- 크레딧 내역 조회 -------------------------------------------------------
   async getHistory(userId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([

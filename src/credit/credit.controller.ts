@@ -45,6 +45,18 @@ export class CreditController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('attendance/status')
+  getAttendanceStatus(@Req() req: any) {
+    return this.creditService.getAttendanceStatus(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('attendance/check')
+  checkDailyAttendance(@Req() req: any) {
+    return this.creditService.checkDailyAttendance(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('history')
   getHistory(
     @Req() req: any,
