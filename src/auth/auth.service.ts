@@ -380,6 +380,7 @@ export class AuthService {
         suspendReason: true,
         credits: true,
         createdAt: true,
+        provider: true,
         subscriptions: {
           where: { expiresAt: { gt: new Date() } },
           take: 1,
