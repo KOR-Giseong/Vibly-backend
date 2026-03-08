@@ -169,7 +169,7 @@ export class PlaceService {
         .deleteMany({ where: { placeId: place.id } })
         .then(() =>
           this.prisma.placeImage.create({
-            data: { placeId: place.id, url: googleData.imageUrl, isPrimary: true },
+            data: { placeId: place.id, url: googleData.imageUrl!, isPrimary: true },
           }),
         )
         .catch(() => {});
