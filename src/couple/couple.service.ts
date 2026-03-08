@@ -1192,6 +1192,8 @@ ${placesListText}
     messages: Array<{ role: 'user' | 'model'; text: string }>,
     lat?: number,
     lng?: number,
+    imageBase64?: string,
+    imageMimeType?: string,
   ) {
     // 프리미엄 체크
     const subscribed = await this.creditService.isSubscribed(userId);
@@ -1209,13 +1211,24 @@ ${placesListText}
 응답은 200자 이내로 간결하게 해주세요.`;
 
     // Gemini contents 형식으로 변환
+    const msgContents = messages.map((m, idx) => {
+      // 마지막 사용자 메시지에 이미지 첨부
+      if (idx === messages.length - 1 && m.role === 'user' && imageBase64 && imageMimeType) {
+        return {
+          role: m.role,
+          parts: [
+            { inline_data: { mime_type: imageMimeType, data: imageBase64 } },
+            { text: m.text || '이 이미지를 분석해서 데이트 코스를 추천해줘' },
+          ],
+        };
+      }
+      return { role: m.role, parts: [{ text: m.text }] };
+    });
+
     const contents = [
       { role: 'user', parts: [{ text: systemPrompt }] },
       { role: 'model', parts: [{ text: '안녕하세요! 오늘 데이트 계획을 도와드릴게요 💕' }] },
-      ...messages.map((m) => ({
-        role: m.role,
-        parts: [{ text: m.text }],
-      })),
+      ...msgContents,
     ];
 
     let responseText = '죄송해요, 잠시 후 다시 시도해주세요.';

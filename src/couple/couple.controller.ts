@@ -165,9 +165,11 @@ export class CoupleController {
       messages: Array<{ role: 'user' | 'model'; text: string }>;
       lat?: number;
       lng?: number;
+      imageBase64?: string;
+      imageMimeType?: string;
     },
   ) {
-    return this.coupleService.aiDateChat(req.user.id, body.messages, body.lat, body.lng);
+    return this.coupleService.aiDateChat(req.user.id, body.messages, body.lat, body.lng, body.imageBase64, body.imageMimeType);
   }
 
   @UseGuards(JwtAuthGuard)
