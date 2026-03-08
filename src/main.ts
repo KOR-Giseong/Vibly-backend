@@ -31,7 +31,7 @@ async function bootstrap() {
   const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
     .split(',').map((o) => o.trim()).filter(Boolean);
   app.enableCors({ origin: isProd ? allowedOrigins : true, credentials: true });
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', { exclude: ['health'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
   // Swagger — 프로덕션 환경에서는 비노출
