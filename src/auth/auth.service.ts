@@ -262,6 +262,27 @@ export class AuthService {
     return this.issueAdminTokens(user.id);
   }
 
+  // 카카오 OAuth 인가 코드 → 액세스 토큰 교환 후 관리자 로그인
+  async adminKakaoCodeLogin(code: string, redirectUri: string) {
+    const restKey = this.config.get<string>('KAKAO_REST_API_KEY');
+    const secret = this.config.get<string>('KAKAO_CLIENT_SECRET');
+    const params = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: restKey!,
+      redirect_uri: redirectUri,
+      code,
+      ...(secret ? { client_secret: secret } : {}),
+    });
+    const { data } = await firstValueFrom(
+      this.http.post<{ access_token: string }>(
+        'https://kauth.kakao.com/oauth/token',
+        params.toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      ),
+    );
+    return this.adminKakaoLogin(data.access_token);
+  }
+
   async adminAppleLogin(idToken: string) {
     try {
       // 웹용 Service ID 우선, 없으면 모바일 Bundle ID로 폴백

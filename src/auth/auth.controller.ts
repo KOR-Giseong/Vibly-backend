@@ -69,6 +69,12 @@ export class AuthController {
     return this.authService.adminKakaoLogin(dto.idToken);
   }
 
+  @Post('admin/kakao-code')
+  @Throttle({ auth: {} })
+  adminKakaoCodeLogin(@Body() dto: SocialLoginDto) {
+    return this.authService.adminKakaoCodeLogin(dto.idToken, dto.redirectUri ?? '');
+  }
+
   @Post('admin/apple')
   @Throttle({ auth: {} })
   adminAppleLogin(@Body() dto: SocialLoginDto) {
