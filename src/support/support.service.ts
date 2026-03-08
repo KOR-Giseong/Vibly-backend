@@ -525,6 +525,28 @@ export class SupportService {
     return { success: true };
   }
 
+  // ── 탈퇴 계정 관리 (재가입 제한 해제) ──────────────────────────────────────
+  async getDeletedAccounts(adminId: string, page = 1, limit = 30) {
+    await this.assertAdmin(adminId);
+    const [total, items] = await Promise.all([
+      this.prisma.deletedAccount.count(),
+      this.prisma.deletedAccount.findMany({
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { deletedAt: 'desc' },
+      }),
+    ]);
+    return { total, page, limit, items };
+  }
+
+  async unlockDeletedAccount(adminId: string, id: string) {
+    await this.assertAdmin(adminId);
+    const record = await this.prisma.deletedAccount.findUnique({ where: { id } });
+    if (!record) throw new NotFoundException('탈퇴 계정 기록을 찾을 수 없어요.');
+    await this.prisma.deletedAccount.delete({ where: { id } });
+    return { success: true };
+  }
+
   private async assertAdmin(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

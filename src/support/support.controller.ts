@@ -251,4 +251,25 @@ export class SupportController {
   deleteAdminReview(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.supportService.deleteAdminReview(req.user.id, id);
   }
+
+  // ── 탈퇴 계정 (재가입 제한 해제) ──────────────────────────────────────────
+  @UseGuards(AdminJwtGuard)
+  @Get('admin/deleted-accounts')
+  getDeletedAccounts(
+    @Req() req: AuthRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.supportService.getDeletedAccounts(
+      req.user.id,
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 30,
+    );
+  }
+
+  @UseGuards(AdminJwtGuard)
+  @Delete('admin/deleted-accounts/:id')
+  unlockDeletedAccount(@Req() req: AuthRequest, @Param('id') id: string) {
+    return this.supportService.unlockDeletedAccount(req.user.id, id);
+  }
 }
