@@ -719,6 +719,10 @@ ${context}
       }),
     ]);
 
+    const isUser1 = couple.user1Id === userId;
+    const me = isUser1 ? couple.user1 : couple.user2;
+    const partner = isUser1 ? couple.user2 : couple.user1;
+
     const plansText = completedPlans.length === 0
       ? '아직 완료된 데이트 기록이 없습니다.'
       : completedPlans.map(p => `- ${p.title} (${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
@@ -735,7 +739,10 @@ ${context}
       ? '없음'
       : plannedPlans.map(p => `- ${p.title} (예정: ${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
 
-    const context = `완료된 데이트: ${plansText}\n예정된 플랜: ${plannedPlansText}\n내 북마크: ${myBookmarkText}\n파트너 북마크: ${partnerBookmarkText}`;
+    const myVibesText = me.preferredVibes?.length ? me.preferredVibes.join(', ') : '정보 없음';
+    const partnerVibesText = partner.preferredVibes?.length ? partner.preferredVibes.join(', ') : '정보 없음';
+
+    const context = `내 취향 바이브: ${myVibesText}\n파트너 취향 바이브: ${partnerVibesText}\n완료된 데이트: ${plansText}\n예정된 플랜: ${plannedPlansText}\n내 북마크: ${myBookmarkText}\n파트너 북마크: ${partnerBookmarkText}`;
 
     // ① Gemini 1차: 지역 + 장소 키워드 추출
     const { region, keywords } = await this.extractDateKeywords(context, userNote);
@@ -756,6 +763,10 @@ ${context}
 ${userNote ? `\n[커플 요청사항 — 최우선 반영]\n${userNote}\n` : ''}
 [지역] ${region}
 
+[커플 취향]
+- 내 바이브: ${myVibesText}
+- 파트너 바이브: ${partnerVibesText}
+
 [카카오 실제 장소 후보]
 ${placesListText}
 
@@ -773,14 +784,16 @@ ${partnerBookmarkText}
 
 [규칙]
 - 요청사항에 지역이나 분위기가 명시된 경우 반드시 최우선으로 반영하세요
+- 커플의 취향 바이브·북마크·데이트 기록을 분석해 개성 있는 코스를 구성하세요
 - 타임라인 5개 항목 중 최소 4개는 위 실제 장소 후보에서 선택하세요
 - place 필드에 실제 장소명을 그대로, address 필드에 실제 주소, kakaoId에 [ ] 안의 ID를 넣으세요
 - 실제 장소가 부족한 경우에만 place에 장소 유형을 쓰고 address·kakaoId는 null로 하세요
 - 동선이 자연스럽도록 가까운 장소끼리 묶어 배치하세요 (오전→점심→오후→저녁→야간)
+- tip은 그 장소에서 커플이 실제로 할 수 있는 구체적인 행동 팁을 적어주세요 (예: "웨이팅 많으니 11시 오픈런 추천", "루프탑 야외석 예약 필수")
 
 다음 JSON 형식으로만 응답하세요 (추가 텍스트 없이):
 {
-  "analysis": "커플 취향 분석 및 이번 코스 추천 이유 (2-3문장, 한국어)",
+  "analysis": "커플의 취향 바이브·북마크를 기반으로 이 코스를 추천하는 이유를 구체적으로 (2-3문장, 한국어). 데이터가 없으면 지역과 계절 분위기 기반으로 설명하세요.",
   "region": "${region}",
   "timeline": [
     { "time": "11:00", "emoji": "☕", "place": "실제 장소명", "address": "실제 주소", "kakaoId": "카카오ID", "activity": "활동 설명", "tip": "한 줄 팁" },
