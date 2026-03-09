@@ -6,13 +6,13 @@ import { AppService } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @SkipThrottle()
+  @SkipThrottle({ default: true, auth: true })
   @Get()
   getHello(): string {
     return this.appService.getHello();
   }
 
-  @SkipThrottle()
+  @SkipThrottle({ default: true, auth: true })
   @Get('health')
   health(): { status: string } {
     return { status: 'ok' };
