@@ -324,7 +324,7 @@ export class CreditService {
     ]);
 
     // 알림 (7일 보너스란 다른 메시지)
-    const title = isWeekBonus ? '🎉 7일 연속 출석 보너스!' : `💪 ${streak}.일째 출석 완료!`;
+    const title = isWeekBonus ? '🎉 7일 연속 출석 보너스!' : `💪 ${streak}일째 출석 완료!`;
     const body = isWeekBonus
       ? `7일 연속 출석 달성! +${creditsEarned} 크레딧 지급`
       : `+${creditsEarned} 크레딧 지급 • 현재 ${user.credits} 크레딧`;
