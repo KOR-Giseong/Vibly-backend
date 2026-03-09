@@ -612,6 +612,7 @@ ${context}
 - 요청사항에 지역이 없으면 컨텍스트의 주요 방문 지역을 사용하세요
 - 지역 정보가 전혀 없으면 커플의 취향에 맞는 적절한 국내 지역을 자유롭게 선택하세요 (서울 외 지방도 가능)
 - 지역명은 카카오 장소 검색에서 인식 가능한 구체적인 지명으로 작성하세요
+- 컨텍스트의 예정된 플랜에 이미 있는 장소 유형은 중복 추천하지 마세요 (다양성 확보)
 
 다음 JSON만 반환 (다른 텍스트·마크다운 없이):
 {
@@ -734,7 +735,7 @@ ${context}
       ? '없음'
       : plannedPlans.map(p => `- ${p.title} (예정: ${new Date(p.dateAt).toLocaleDateString('ko-KR')})`).join('\n');
 
-    const context = `완료된 데이트: ${plansText}\n내 북마크: ${myBookmarkText}\n파트너 북마크: ${partnerBookmarkText}`;
+    const context = `완료된 데이트: ${plansText}\n예정된 플랜: ${plannedPlansText}\n내 북마크: ${myBookmarkText}\n파트너 북마크: ${partnerBookmarkText}`;
 
     // ① Gemini 1차: 지역 + 장소 키워드 추출
     const { region, keywords } = await this.extractDateKeywords(context, userNote);
@@ -838,15 +839,23 @@ ${partnerBookmarkText}
     const discountRate = partnerSubscribed ? 0.5 : 0;
     const creditsRemaining = await this.creditService.spend(userId, COUPLE_DATE_AI_REFINE_COST, 'COUPLE_DATE_AI' as any, couple.id, discountRate);
 
-    // 기존 타임라인에서 지역 추출 (주소 있는 항목 우선)
-    const regionFromTimeline = timeline
-      .map(t => t.address)
-      .filter(Boolean)
-      .map((addr: string) => addr.split(' ').slice(1, 3).join(' '))
-      .find(Boolean) ?? '해당 지역';
+    // 기존 타임라인에서 지역 추출 (주소 있는 항목 우선, 시·구·동 단위로 안정적 파싱)
+    const regionFromTimeline = (() => {
+      for (const t of timeline) {
+        if (!t.address) continue;
+        const parts = t.address.split(' ');
+        // "서울 강남구 청담동..." → "강남구" 또는 "강남구 청담동"
+        const siIdx = parts.findIndex((p: string) => p.endsWith('시') || p.endsWith('도'));
+        if (siIdx >= 0 && parts[siIdx + 1]) return parts[siIdx + 1];
+        // 도시명 없이 "강남구 청담동..." 형태
+        if (parts[0]) return parts[0];
+      }
+      return '해당 지역';
+    })();
 
-    // 피드백 기반 카카오 검색 (실제 대안 장소 확보)
-    const placeCandidates = await this.searchKakaoForDate(regionFromTimeline, [feedback], 5);
+    // 피드백 + 지역 조합으로 카카오 검색 (피드백 자체가 장소 유형이면 더 정확)
+    const searchKeyword = feedback.length <= 20 ? feedback : feedback.slice(0, 20);
+    const placeCandidates = await this.searchKakaoForDate(regionFromTimeline, [searchKeyword], 5);
 
     const placesListText = placeCandidates.length === 0
       ? '검색된 대안 장소가 없습니다.'
@@ -861,17 +870,19 @@ ${partnerBookmarkText}
 [현재 타임라인]
 ${timelineText}
 
-[수정 요청]
+[수정 요청 — 반드시 반영]
 ${feedback}
 
 [대안으로 쓸 수 있는 실제 장소 후보 (카카오 검색 결과)]
 ${placesListText}
 
 [규칙]
-- 수정 요청과 관련 없는 항목은 반드시 그대로 유지하세요
-- 변경이 필요한 항목은 가능하면 위 실제 장소 후보에서 선택하세요
+- 수정 요청에서 바꾸라는 항목만 수정하고, 나머지 항목은 반드시 원래대로 유지하세요
+- 수정 요청이 특정 시간대(점심, 저녁 등)를 언급하면 해당 시간대 항목만 교체하세요
+- 변경 항목은 가능하면 실제 장소 후보에서 선택하세요
 - 실제 장소를 선택했다면 place에 실제 장소명, address에 실제 주소, kakaoId에 [ ] 안의 ID를 사용하세요
-- 기존 항목의 address·kakaoId도 그대로 유지하세요
+- 실제 장소 후보가 없으면 수정 요청에 맞는 장소 유형을 place에 쓰고 address·kakaoId는 null로 하세요
+- 기존 항목의 address·kakaoId는 변경하지 않는 한 그대로 유지하세요
 
 다음 JSON만 반환 (다른 텍스트 없이):
 {
@@ -1205,10 +1216,58 @@ ${placesListText}
     const couple = await this.findMyCouple(userId);
     if (!couple) throw new NotFoundException('커플 등록 후 이용할 수 있어요.');
 
-    const systemPrompt = `당신은 커플의 데이트를 도와주는 AI 비서입니다.
-한국어로 친근하고 따뜻하게 대화하세요.
-장소 추천이 필요하면 구체적인 장소 유형이나 키워드를 제안해주세요.
-응답은 200자 이내로 간결하게 해주세요.`;
+    const isUser1 = couple.user1Id === userId;
+    const me = isUser1 ? couple.user1 : couple.user2;
+    const partner = isUser1 ? couple.user2 : couple.user1;
+
+    // 커플 컨텍스트 구성 (최근 데이트 + 북마크)
+    const [recentPlans, myBookmarks, partnerBookmarks] = await Promise.all([
+      this.prisma.datePlan.findMany({
+        where: { coupleId: couple.id },
+        orderBy: { dateAt: 'desc' },
+        take: 5,
+        select: { title: true, dateAt: true, status: true },
+      }),
+      this.prisma.bookmark.findMany({
+        where: { userId },
+        include: { place: { select: { name: true, category: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      this.prisma.bookmark.findMany({
+        where: { userId: partner.id },
+        include: { place: { select: { name: true, category: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+    ]);
+
+    const myVibes = me.preferredVibes?.join(', ') || '정보 없음';
+    const partnerVibes = partner.preferredVibes?.join(', ') || '정보 없음';
+    const plansText = recentPlans.length === 0
+      ? '아직 없음'
+      : recentPlans.map(p => `${p.title} (${new Date(p.dateAt).toLocaleDateString('ko-KR')}, ${p.status === 'COMPLETED' ? '완료' : '예정'})`).join(', ');
+    const myBmText = myBookmarks.length === 0 ? '없음' : myBookmarks.map(b => b.place.name).join(', ');
+    const partnerBmText = partnerBookmarks.length === 0 ? '없음' : partnerBookmarks.map(b => b.place.name).join(', ');
+    const locationHint = lat != null && lng != null ? '현재 위치 정보 있음 (주변 장소 검색 가능)' : '위치 정보 없음';
+
+    const systemPrompt = `당신은 커플 전용 AI 데이트 비서입니다. 아래 커플 정보를 바탕으로 맞춤 데이트 조언을 해주세요.
+
+[커플 정보]
+- 나: ${me.nickname ?? me.name} / 취향 바이브: ${myVibes}
+- 파트너: ${partner.nickname ?? partner.name} / 취향 바이브: ${partnerVibes}
+- 최근 데이트: ${plansText}
+- 내 북마크 장소: ${myBmText}
+- 파트너 북마크 장소: ${partnerBmText}
+- ${locationHint}
+
+[응답 규칙]
+- 한국어로 친근하고 따뜻하게 대화하세요
+- 커플의 취향·북마크·데이트 기록을 적극 반영해 맞춤 제안을 하세요
+- 장소 추천 시 구체적인 장소 유형이나 카테고리 키워드를 명시하세요 (예: "홍대 루프탑 바", "강남 브런치 카페")
+- 코스나 일정 제안 시 오전→점심→오후→저녁 흐름으로 동선을 자연스럽게 구성하세요
+- 이미지가 첨부되면 사진 분위기를 분석해 어울리는 데이트 코스를 제안하세요
+- 응답은 500자 이내로 핵심만 담아 전달하세요`;
 
     // Gemini contents 형식으로 변환
     const msgContents = messages.map((m, idx) => {
@@ -1227,7 +1286,7 @@ ${placesListText}
 
     const contents = [
       { role: 'user', parts: [{ text: systemPrompt }] },
-      { role: 'model', parts: [{ text: '안녕하세요! 오늘 데이트 계획을 도와드릴게요 💕' }] },
+      { role: 'model', parts: [{ text: '안녕하세요! 두 분의 데이트를 도와드릴게요 💕 어떤 데이트를 원하세요?' }] },
       ...msgContents,
     ];
 
@@ -1242,19 +1301,19 @@ ${placesListText}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents,
-            generationConfig: { temperature: 0.9, maxOutputTokens: 400 },
+            generationConfig: { temperature: 0.9, maxOutputTokens: 1024 },
           }),
         },
       );
       const data = await res.json() as any;
       responseText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? responseText;
 
-      // 장소 추천 키워드 감지 → 카카오 검색
-      if (lat != null && lng != null && responseText.includes('추천')) {
-        const keywordMatch = responseText.match(/["「]([^"」]+)["」]/);
-        if (keywordMatch) {
+      // 장소 추천 의도 감지 → 카카오 검색
+      if (lat != null && lng != null) {
+        const placeKeyword = this.extractPlaceKeyword(responseText);
+        if (placeKeyword) {
           try {
-            places = await this.kakao.searchByKeyword(keywordMatch[1], lat, lng, 1, 'distance', 3);
+            places = await this.kakao.searchByKeyword(placeKeyword, lat, lng, 1, 'distance', 3);
           } catch {
             // 카카오 검색 실패 무시
           }
@@ -1265,6 +1324,33 @@ ${placesListText}
     }
 
     return { text: responseText, places: places.length > 0 ? places : undefined };
+  }
+
+  // ── 내부 헬퍼: AI 응답에서 장소 검색 키워드 추출 ──────────────────────────────
+  private extractPlaceKeyword(text: string): string | null {
+    const PLACE_TRIGGERS = ['추천', '가볼만한', '어때요', '어때', '좋겠어요', '방문', '들러', '가보세요', '가시면', '가봐요'];
+    const hasTrigger = PLACE_TRIGGERS.some(t => text.includes(t));
+    if (!hasTrigger) return null;
+
+    // 따옴표 안 키워드 우선
+    const quotedMatch = text.match(/["「『]([^"」』]{2,15})["」』]/);
+    if (quotedMatch) return quotedMatch[1];
+
+    // 지역명 + 장소 유형 패턴 (예: "홍대 카페", "강남 루프탑 바")
+    const regionCategoryMatch = text.match(/([가-힣]{2,5}[동구역시]?\s+)([가-힣a-zA-Z\s]{2,10}(?:카페|레스토랑|맛집|공원|전시|미술관|영화관|이자카야|루프탑|베이커리|바|펍))/);
+    if (regionCategoryMatch) return regionCategoryMatch[0].trim();
+
+    // 장소 카테고리 단독 키워드
+    const PLACE_CATEGORIES = [
+      '루프탑 바', '브런치 카페', '이탈리안 레스토랑', '미술관', '전시관',
+      '한강공원', '감성 카페', '이자카야', '야경 맛집', '테라스 카페',
+      '카페', '레스토랑', '맛집', '공원', '전시', '영화관', '노래방', '볼링장',
+    ];
+    for (const cat of PLACE_CATEGORIES) {
+      if (text.includes(cat)) return cat;
+    }
+
+    return null;
   }
 
   private async assertAdmin(userId: string) {
