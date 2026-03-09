@@ -15,12 +15,12 @@ export class NotificationScheduler {
   async sendDailyNotification() {
     this.logger.log('일일 자동 알림 발송 시작');
     try {
-      const { sent } = await this.notificationService.broadcastByAdmin(
+      const { sent, pushed } = await this.notificationService.broadcastByAdmin(
         '오늘 하루, 어땠나요?',
         '오늘 하루도 수고했어요. 잠깐 쉬어가는 시간, Vibly와 함께요.',
         'NOTICE',
       );
-      this.logger.log(`일일 자동 알림 발송 완료: ${sent}명`);
+      this.logger.log(`일일 자동 알림 완료: 대상 ${sent}명, push 성공 ${pushed}개`);
     } catch (err) {
       this.logger.error('일일 자동 알림 발송 실패', err);
     }

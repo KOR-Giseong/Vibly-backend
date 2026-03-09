@@ -152,7 +152,7 @@ export class PlaceService {
     const vibeTags = mood
       ? this.personalizeByMood(mood, categoryVibes)
       : (vibes && vibes.length > 0)
-        ? this.personalizeByVibes(vibes, categoryVibes)
+        ? this.personalizeByVibes(vibes, categoryVibes, place.category as string)
         : categoryVibes;
     const autoDescription =
       place.description ?? this.generateDescription(place.name, place.category as string);
@@ -915,10 +915,38 @@ export class PlaceService {
     return merged.slice(0, 4);
   }
 
-  // ── Private: 선호 바이브 기반 태그 개인화 ────────────────────────────────
-  private personalizeByVibes(preferredVibes: string[], categoryVibes: string[]): string[] {
-    // 선호 바이브를 앞에, 카테고리 태그(중복 제거)를 뒤에 합쳐 최대 4개 반환
-    const merged = [...preferredVibes, ...categoryVibes.filter(v => !preferredVibes.includes(v))];
+  // ── 선호 바이브-카테고리 호환성 맵 ─────────────────────────────────────────
+  private static readonly VIBE_CATEGORY_COMPAT: Record<string, string[]> = {
+    '트렌디한':    ['CAFE', 'BAR', 'RESTAURANT', 'CULTURAL'],
+    '힙한':        ['CAFE', 'BAR', 'RESTAURANT', 'CULTURAL'],
+    '감성적':      ['CAFE', 'BAR', 'CULTURAL', 'BOOKSTORE'],
+    '감성 충전':   ['CAFE', 'BAR', 'CULTURAL', 'BOOKSTORE'],
+    '아늑한':      ['CAFE', 'BOOKSTORE', 'SPA', 'RESTAURANT'],
+    '조용한':      ['CAFE', 'BOOKSTORE', 'PARK'],
+    '힐링':        ['SPA', 'PARK', 'CAFE', 'BOOKSTORE'],
+    '자연 친화':   ['PARK', 'CAFE'],
+    '신나는':      ['KARAOKE', 'BOWLING', 'ARCADE', 'ESCAPE', 'BAR'],
+    '활기찬':      ['KARAOKE', 'BOWLING', 'ARCADE', 'RESTAURANT', 'BAR'],
+    '분위기 있는': ['BAR', 'RESTAURANT', 'CAFE', 'CULTURAL'],
+    '고급스러운':  ['RESTAURANT', 'BAR', 'SPA'],
+    '럭셔리':      ['RESTAURANT', 'BAR', 'SPA'],
+    '독특한':      ['CULTURAL', 'ESCAPE', 'BOOKSTORE', 'ETC'],
+    '예술적':      ['CULTURAL', 'BOOKSTORE', 'CAFE'],
+    '낭만적':      ['CAFE', 'BAR', 'RESTAURANT'],
+    '데이트':      ['CAFE', 'BAR', 'RESTAURANT', 'CULTURAL'],
+  };
+
+  // ── Private: 선호 바이브 기반 태그 개인화 (카테고리 호환성 체크) ────────────
+  private personalizeByVibes(preferredVibes: string[], categoryVibes: string[], category?: string): string[] {
+    // 카테고리와 호환되는 선호 바이브만 필터링 (예: 국밥집에 "트렌디한" 태그 방지)
+    const compatibleVibes = category
+      ? preferredVibes.filter((vibe) => {
+          const allowed = PlaceService.VIBE_CATEGORY_COMPAT[vibe];
+          return !allowed || allowed.includes(category);
+        })
+      : preferredVibes;
+    // 호환 바이브를 앞에, 카테고리 기본 태그(중복 제거)를 뒤에 합쳐 최대 4개
+    const merged = [...compatibleVibes, ...categoryVibes.filter(v => !compatibleVibes.includes(v))];
     return merged.slice(0, 4);
   }
 

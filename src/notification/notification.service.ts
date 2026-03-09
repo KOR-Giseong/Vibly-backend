@@ -149,7 +149,7 @@ export class NotificationService {
     title: string,
     body: string,
     type: NotificationType = 'PROMO',
-  ): Promise<{ sent: number }> {
+  ): Promise<{ sent: number; pushed: number }> {
     return this.broadcast('', title, body, type);
   }
 
@@ -158,7 +158,7 @@ export class NotificationService {
     title: string,
     body: string,
     type: NotificationType = 'PROMO',
-  ): Promise<{ sent: number }> {
+  ): Promise<{ sent: number; pushed: number }> {
     // adminId가 있을 때만 관리자 확인 (내부 호출 시 스킵)
     if (adminId) {
       const admin = await this.prisma.user.findUnique({
@@ -168,11 +168,12 @@ export class NotificationService {
       if (!admin?.isAdmin) throw new Error('관리자만 전송할 수 있어요.');
     }
 
-    // 모든 사용자에게 DB 알림 생성 + 푸시 토큰 수집
+    // 모든 활성 사용자 조회
     const users = await this.prisma.user.findMany({
       where: { deletedAt: null, status: 'ACTIVE' },
       select: { id: true },
     });
+    this.logger.log(`broadcast: 대상 유저 ${users.length}명`);
 
     // DB 알림 일괄 생성
     await this.prisma.notification.createMany({
@@ -186,10 +187,13 @@ export class NotificationService {
       skipDuplicates: true,
     });
 
-    // 푸시 토큰 수집 후 발송
+    // 활성 유저의 푸시 토큰만 수집
+    const activeUserIds = users.map((u) => u.id);
     const devices = await this.prisma.device.findMany({
+      where: { userId: { in: activeUserIds } },
       select: { pushToken: true },
     });
+    this.logger.log(`broadcast: Device 토큰 ${devices.length}개 조회됨`);
 
     const messages: import('expo-server-sdk').ExpoPushMessage[] = devices
       .filter((d) => Expo.isExpoPushToken(d.pushToken))
@@ -203,17 +207,30 @@ export class NotificationService {
         channelId: 'default',
       }));
 
+    this.logger.log(`broadcast: 유효한 Expo 토큰 ${messages.length}개 → push 발송 시작`);
+
+    let pushed = 0;
     if (messages.length) {
       const chunks = expo.chunkPushNotifications(messages);
       for (const chunk of chunks) {
-        expo
-          .sendPushNotificationsAsync(chunk)
-          .catch((e: unknown) =>
-            this.logger.error(`broadcast push failed: ${String(e)}`),
-          );
+        try {
+          const receipts = await expo.sendPushNotificationsAsync(chunk);
+          const errors = receipts.filter((r) => r.status === 'error');
+          pushed += receipts.length - errors.length;
+          if (errors.length) {
+            errors.forEach((e) =>
+              this.logger.warn(`push error: ${e.message} (details: ${JSON.stringify(e.details)})`),
+            );
+          }
+        } catch (e: unknown) {
+          this.logger.error(`broadcast push failed: ${String(e)}`);
+        }
       }
+      this.logger.log(`broadcast 완료: 성공 ${pushed}/${messages.length}개`);
+    } else {
+      this.logger.warn('broadcast: 발송할 유효한 토큰이 없음 → Device 테이블을 확인하세요');
     }
 
-    return { sent: users.length };
+    return { sent: users.length, pushed };
   }
 }
