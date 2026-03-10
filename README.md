@@ -1,98 +1,135 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Vibly Backend — NestJS REST API 서버
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Vibly 앱의 백엔드 서버입니다. NestJS + Prisma + PostgreSQL 기반으로 인증, 장소 검색, AI 추천, 커플 기능 등 전체 API를 제공합니다.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 기술 스택
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| 분류 | 기술 |
+|------|------|
+| 프레임워크 | NestJS 11 |
+| 언어 | TypeScript |
+| ORM | Prisma 7 |
+| 데이터베이스 | PostgreSQL |
+| 캐시 / 큐 | Redis, Bull |
+| 인증 | JWT (Access + Refresh Token), Passport |
+| AI | Google Gemini 2.5 Flash |
+| 장소 | 카카오 로컬 API, Google Places API |
+| 파일 저장 | Cloudflare R2 (S3 호환) |
+| 이메일 | Resend |
+| 푸시 알림 | Expo Server SDK |
+| 보안 | Helmet, Throttler (Rate Limiting) |
+| API 문서 | Swagger |
+| 배포 | Render |
 
-## Project setup
+---
 
-```bash
-$ npm install
+## 주요 모듈
+
+### 인증 (`auth`)
+- 이메일/비밀번호 회원가입·로그인
+- 카카오 소셜 로그인
+- JWT Access / Refresh Token 발급 및 갱신
+- 이메일 인증
+
+### 장소 (`place`)
+- 카카오 로컬 API 키워드 검색
+- Google Places API 사진·평점 보완
+- 북마크, 체크인, 리뷰
+
+### AI 무드 검색 (`mood`)
+- 자연어 쿼리 → Gemini 분석 → 카카오 장소 검색
+- 빠른 키워드 매칭으로 Gemini 호출 최소화
+- 취향 바이브 기반 결과 정렬
+
+### 커플 (`couple`)
+- 커플 초대·수락·해제
+- 데이트 플랜 CRUD
+- 추억 사진 업로드 (R2 저장)
+- AI 데이트 코스 분석 (15크레딧): Gemini 2단계 호출 + 카카오 실장소 검색
+- AI 대화형 데이트 비서 (프리미엄): 커플 컨텍스트 기반 대화
+- AI 타임라인 수정 (2크레딧)
+
+### 크레딧 (`credit`)
+- 출석 체크 (연속 출석 보너스)
+- 크레딧 차감·충전
+- 구독 관리
+
+### 알림 (`notification`)
+- Expo Push Notification 발송
+- 커플 초대, 출석, AI 분석 완료 알림
+
+### 커뮤니티 (`community`)
+- 게시글·댓글 CRUD
+- 좋아요, 신고
+
+### 관리자
+- 유저·커플·커뮤니티·크레딧·구독 관리
+- 신고 처리, 공지사항
+
+---
+
+## 프로젝트 구조
+
+```
+src/
+├── auth/           # 인증 (JWT, 소셜 로그인)
+├── couple/         # 커플 기능 + AI 데이트 분석
+├── credit/         # 크레딧·구독
+├── mood/           # AI 장소 추천
+├── place/          # 장소 검색 (카카오, Google)
+├── notification/   # 푸시 알림
+├── community/      # 커뮤니티
+├── storage/        # Cloudflare R2 파일 업로드
+├── prisma/         # Prisma 서비스
+└── main.ts
 ```
 
-## Compile and run the project
+---
+
+## 실행 방법
 
 ```bash
-# development
-$ npm run start
+# 의존성 설치
+npm install
 
-# watch mode
-$ npm run start:dev
+# 환경변수 설정
+cp .env.example .env
 
-# production mode
-$ npm run start:prod
+# Prisma 마이그레이션
+npx prisma migrate dev
+
+# 개발 서버 실행
+npm run start:dev
 ```
 
-## Run tests
+### 환경변수 주요 항목
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```env
+DATABASE_URL=postgresql://...
+JWT_SECRET=...
+JWT_REFRESH_SECRET=...
+GEMINI_API_KEY=...
+KAKAO_REST_API_KEY=...
+GOOGLE_PLACES_API_KEY=...
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=...
+REDIS_URL=...
+EXPO_ACCESS_TOKEN=...
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## API 문서
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+서버 실행 후 `/api` 경로에서 Swagger UI로 확인할 수 있습니다.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+---
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## 관련 저장소
 
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- [Vibly](https://github.com/KOR-Giseong/Vibly) — React Native 앱
+- [vibly-admin](https://github.com/KOR-Giseong/vibly-admin) — Next.js 관리자 웹
