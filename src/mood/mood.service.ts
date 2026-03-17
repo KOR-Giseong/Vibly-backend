@@ -230,6 +230,16 @@ export class MoodService {
         if (hasCompatibleVibe) score += 5;
       }
 
+      // Google 평점 반영 (최대 +15점): 4.0점 → +5, 4.5점 → +7.5, 5.0점 → +10
+      if (place.googleRating) {
+        score += (place.googleRating - 3.0) * 5;
+      }
+
+      // 리뷰 수 반영 (최대 +10점, log 스케일): 100건 → +7, 500건 → +9.3, 1000건 → 상한
+      if (place.googleReviewCount) {
+        score += Math.min(10, Math.log10(place.googleReviewCount) * 3.5);
+      }
+
       // 태그: 매칭된 AI 키워드를 맨 앞에 배치해 관련성 표시
       const existingTags: string[] = Array.isArray(place.tags) ? place.tags : [];
       const tags = matchedKeyword
