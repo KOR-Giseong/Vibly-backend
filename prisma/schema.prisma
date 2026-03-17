@@ -240,9 +240,11 @@ model Place {
   lng         Float
   phone       String?
   hours       String?
-  rating      Float         @default(0)
-  reviewCount Int           @default(0)
-  vibeScore   Float         @default(0)
+  rating            Float         @default(0)
+  reviewCount       Int           @default(0)
+  vibeScore         Float         @default(0)
+  googleRating      Float?
+  googleReviewCount Int?
   isActive    Boolean       @default(true)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

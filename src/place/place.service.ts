@@ -175,6 +175,19 @@ export class PlaceService {
         .catch(() => {});
     }
 
+    // Google 평점/리뷰수 DB 저장 (정렬에 활용하기 위해 캐싱)
+    if (googleData?.googleRating) {
+      this.prisma.place
+        .update({
+          where: { id: place.id },
+          data: {
+            googleRating: googleData.googleRating,
+            ...(googleData.googleReviewCount != null && { googleReviewCount: googleData.googleReviewCount }),
+          },
+        })
+        .catch(() => {});
+    }
+
     return {
       ...place,
       vibeScore: score, // 항상 계산된 점수 반환 (DB의 0 덮어씀)
@@ -849,6 +862,8 @@ export class PlaceService {
         rating: true,
         reviewCount: true,
         vibeScore: true,
+        googleRating: true,
+        googleReviewCount: true,
         images: { take: 1, orderBy: { createdAt: 'desc' } },
       },
     });
@@ -870,13 +885,23 @@ export class PlaceService {
           vibeScore: (db.vibeScore != null && db.vibeScore > 0)
             ? db.vibeScore
             : this.categoryVibeScore(place.category),
+          googleRating: db.googleRating ?? undefined,
+          googleReviewCount: db.googleReviewCount ?? undefined,
         };
       }
       // DB 리뷰 없음 → 카테고리 기반 기본 바이브 점수 부여
       const vibeScore = (db?.vibeScore != null && db.vibeScore > 0)
         ? db.vibeScore
         : this.categoryVibeScore(place.category);
-      return { ...place, imageUrl, rating: 0, reviewCount: db?.reviewCount ?? 0, vibeScore };
+      return {
+        ...place,
+        imageUrl,
+        rating: 0,
+        reviewCount: db?.reviewCount ?? 0,
+        vibeScore,
+        googleRating: db?.googleRating ?? undefined,
+        googleReviewCount: db?.googleReviewCount ?? undefined,
+      };
     });
   }
 
